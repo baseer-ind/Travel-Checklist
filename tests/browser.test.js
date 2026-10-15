@@ -70,6 +70,62 @@ const assert = require("assert");
     assert.ok(names.includes("Travel pillow") && names.includes("Eye mask"), "server has both offline-added items");
   });
 
+  // Two devices, one account: a stale edit is rejected and kept as a recovered copy (nothing is lost).
+  await test("two-device conflict: loser's edit becomes a recovered copy, winner's edit kept", async () => {
+    const A = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const B = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const a = await A.newPage(), b = await B.newPage();
+
+    // Device A signs up and seeds its trip.
+    await a.goto(base + "/", { waitUntil: "networkidle" });
+    await a.getByRole("tab", { name: "Create account" }).click();
+    await a.locator("#aName").fill("Dyad"); await a.locator("#aPass").fill("secret1"); await a.locator("#aCode").fill("family");
+    await a.getByRole("button", { name: "Create my account" }).click();
+    await a.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await a.getByText("✓ Saved").waitFor({ timeout: 8000 });
+
+    // Device B logs into the same account and pulls the trip.
+    await b.goto(base + "/", { waitUntil: "networkidle" });
+    await b.locator("#aName").fill("Dyad"); await b.locator("#aPass").fill("secret1");
+    await b.getByRole("button", { name: "Log in" }).click();
+    await b.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await b.getByText("✓ Saved").waitFor({ timeout: 8000 });
+
+    // B goes offline so it can't see A's next change.
+    await B.setOffline(true);
+
+    // A (online) edits the trip and syncs → server revision advances.
+    await a.getByLabel("New item").fill("A wins item");
+    await a.getByRole("button", { name: "Add ➕" }).click();
+    await a.getByText("A wins item").waitFor();
+    await a.getByText("✓ Saved").waitFor({ timeout: 8000 });
+
+    // B (offline) edits the SAME trip at the now-stale revision.
+    await b.getByLabel("New item").fill("B loses item");
+    await b.getByRole("button", { name: "Add ➕" }).click();
+    await b.getByText("B loses item").waitFor();
+
+    // B reconnects → its push is rejected (409); B keeps a recovered copy and takes A's version.
+    await B.setOffline(false);
+    await b.getByText("A wins item").waitFor({ timeout: 12000 });               // B now shows the winner's edit
+    await b.getByText("✓ Saved").waitFor({ timeout: 12000 });
+    assert.equal(await b.getByText("B loses item").count(), 0, "loser's edit is no longer in the active trip");
+
+    const recovered = await b.evaluate(async () => {
+      const req = indexedDB.open("baggo");
+      const db = await new Promise((res) => { req.onsuccess = () => res(req.result); });
+      const all = await new Promise((res) => { const r = db.transaction("recovered").objectStore("recovered").getAll(); r.onsuccess = () => res(r.result); });
+      return JSON.stringify(all);
+    });
+    assert.ok(recovered.includes("B loses item"), "the rejected edit is kept as a recovered copy");
+
+    // the server holds the winner's edit, not the loser's
+    const srv = await a.evaluate(async () => JSON.stringify(await fetch("/api/data", { credentials: "same-origin" }).then((r) => r.json())));
+    assert.ok(srv.includes("A wins item") && !srv.includes("B loses item"), "server kept the winner's edit only");
+
+    await A.close(); await B.close();
+  });
+
   await browser.close();
   await new Promise((r) => server.close(r));
   console.log("\n" + passed + " passed, " + failed + " failed");

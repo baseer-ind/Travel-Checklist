@@ -33,7 +33,7 @@ Legend: **built** (in code and exercised by a test or read end to end) · **part
 | Readiness | Never a score | **conflicts** | Trip and group screens show a percentage (`pct + "%"`). CLAUDE.md forbids a readiness score. |
 | Offline (signed in) | Boot and use with no network | **built** (browser-tested) | `public/db.js` (IndexedDB) + local-first boot in `app.js`: trips load from the device before the network, an offline reload keeps everything, offline edits persist and sync on reconnect without being overwritten. Verified by `tests/browser.test.js` at 375 px. |
 | Offline (no account) | Full use with no account | not built | Guest/no-account mode is Journey-1 **screen** work; it waits for the Stage 2 build. The store underneath is ready. |
-| Sync | Offline edits reach the server | partly built | Whole-document push via `/api/data` on reconnect (local wins). The per-trip `/api/trips` sync queue with recovered copies is the next step. |
+| Sync | Offline edits reach the server; conflicts keep a recovered copy | **built** (browser-tested) | `public/sync.js`: per-trip push with revision compare-and-set against `/api/trips`; a rejected (409) push keeps the local version as a recovered copy, then takes the server's; then pulls new/advanced trips and removes trips deleted elsewhere. Two-device conflict verified in `tests/browser.test.js`. |
 | Offline | Install to home screen | partly built | Manifest and 192/512/maskable icons exist. No install hint. Name is still "Family Travel Checklist". |
 | Offline | Shell cache | built (unverified offline) | `sw.js` network-first shell cache; never tested with the network off. Google Fonts aren't cached. |
 | Account | Name + password, sync across devices | built | Required before anything works. |

@@ -144,6 +144,8 @@ Shared components: trip card, list chip row, item row, progress bar, countdown, 
 
 Recommendation: **Direction 2, "Bright Luggage"**. It keeps the light, saturated look the current app already has and the user prefers, drops the pastel softness that reads as a children's app, and gives the design system enough contrast to pass accessibility without a dark theme.
 
+**Resolved (16 Oct 2026), "Design_1" (warm paper):** white background, one warm off-white surface `#F7F4EF`, warm borders, dark ink; four accents — Packed `#0E7C66`, Not needed `#B45309`, Private `#6D28D9`, Together `#D83A4E` — each bound to one meaning and always paired with an icon or word. Blue `#1361D1` is focus and links only, not a fifth meaning. Tokens are in `public/tokens.css`; the approved design is noted in `docs/DESIGN.md`.
+
 |  | 1. Pastel Postcard (current) | 2. Bright Luggage (chosen) | 3. Boarding Pass |
 | --- | --- | --- | --- |
 | Feel | Soft, friendly, family | Confident, playful, clear | Precise, airline-like, grown-up |
@@ -154,7 +156,7 @@ Recommendation: **Direction 2, "Bright Luggage"**. It keeps the light, saturated
 | Strength | Already built; warm | Readable at a glance; contrast passes; colour carries meaning (packed, skipped, private, group) | Distinctive; trustworthy for documents |
 | Weakness | Contrast fails on pastel-on-pastel; feels made for kids; too many radii | Needs discipline so four accents do not become rainbow noise | Cold for families; dark theme temptation; uppercase hurts Urdu and Hindi later |
 
-Tokens Stage 2 must fix: four accent colours each mapped to exactly one meaning (packed, not needed, private, together), 4 px spacing scale, two radii (12 card, 999 chip), one shadow, minimum text 14 px, touch targets 44 px, motion under 200 ms and off under reduced-motion. No dark theme at launch; the system must not depend on one.
+Tokens (now fixed in `public/tokens.css`): four accent colours each mapped to exactly one meaning (Packed `#0E7C66`, Not needed `#B45309`, Private `#6D28D9`, Together `#D83A4E`), plus a focus/link blue `#1361D1`; 4 px spacing scale, radii 12 card / 999 chip / 8 button, one shadow, minimum text 14 px, touch targets 44 px, motion under 200 ms and off under reduced-motion. No dark theme at launch; the system must not depend on one.
 
 ## G. End-to-end journeys
 
