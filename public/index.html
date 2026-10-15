@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Family Travel Checklist</title>
+<meta name="description" content="Pack together: trips, checklists, countdown and a family view.">
+<meta name="theme-color" content="#fdf8fb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Checklist">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css?v=1">
+</head>
+<body class="guest">
+<div class="app">
+  <aside class="side" id="side" aria-label="Trips">
+    <h2>🧳 My trips</h2>
+    <button class="newtrip" id="newTripBtn" type="button">➕ New trip</button>
+    <div id="tripList"></div>
+    <div id="groupList"></div>
+    <div class="sidefoot" id="sideFoot"></div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+  <main class="main" id="main"><p class="sub loading">Loading…</p></main>
+</div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <div class="card">
+    <h3 id="mTitle"></h3>
+    <p id="mText"></p>
+    <input type="text" id="mInput" maxlength="50" autocomplete="off" aria-label="Value">
+    <select id="mSel" aria-label="Choose one"></select>
+    <div class="btns">
+      <button class="btn ghost" id="mCancel" type="button">Cancel</button>
+      <button class="btn" id="mOk" type="button">OK</button>
+    </div>
+  </div>
+</div>
+<script src="/app.js?v=1"></script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });
+}
+</script>
+</body>
+</html>
