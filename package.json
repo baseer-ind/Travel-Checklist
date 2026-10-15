@@ -4,11 +4,17 @@
   "private": true,
   "description": "Baggo – Your Travel Checklist. Offline-first pack-together PWA: trips, any kind of list, countdown, family and group views. Node + Upstash Redis on Vercel.",
   "main": "server.js",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "test": "node tests/api.test.js"
+    "test": "node tests/api.test.js",
+    "test:browser": "node tests/browser.test.js"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
 }

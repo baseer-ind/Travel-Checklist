@@ -68,3 +68,15 @@ Logged here rather than copied into code (CLAUDE.md: the no-readiness-score hard
 - **"% ready" is a readiness score.** The Together/Member views label each person `"{pct}% ready"`, and a group load-error says "Showing the last synced readiness". The definition bans a readiness score and the wording "ready to travel". When these screens are built, the number stays (it's progress) but the label becomes **"% packed"**, and the error reads "last synced progress". Not a restyle; a copy change the hard rule requires.
 - **A fifth colour, `--focus` `#1361D1` (blue), is used for the focus ring and links.** The definition names four *accent meanings*; a focus/link colour outside those four is fine and expected (focus must be visible and distinct). Kept, documented as non-meaning, not counted against the four-accent rule.
 - No other D/E/F gaps found. New trip is a modal and Item sheet is a bottom sheet (not tab screens), as the definition expects.
+
+## 2026-10-16 — Local-first store and boot (data layer, part 2)
+
+`public/db.js` is the IndexedDB store: one record per trip (keyed `owner|tripId`), plus templates, recovered copies and a small meta record, with a cached public session so the app can boot with no network. All reads/writes are wrapped so a blocked IndexedDB (private windows, cleared data) degrades to no-op and the app still runs.
+
+- `app.js` boots local-first: cached trips render before the network; every edit is written to IndexedDB before the debounced network save.
+- IDs are random strings (`nid()`), replacing the per-user counter that collided across devices.
+- **Reconnect rule for now:** if the device has unsynced local edits, local wins and is pushed via `/api/data`; the server never overwrites unsynced edits. Per-trip conflict handling with recovered copies arrives with the sync queue (next step).
+- **Sign-out wipes the device** for that user (trips, templates, cached session); if there are unsynced edits and no network, it warns once before wiping.
+- Verified by `tests/browser.test.js` (Playwright, 375 px): sign-up → create/tick → offline reload keeps data → offline edit survives a second offline reload → back online, edits sync. `npm test` (Node API) stays at 36/36 and installs nothing.
+
+Still pending (next step): the per-trip `/api/trips` sync queue with revisions and recovered copies, and the service-worker rework (fonts, "Updated" toast). No-account guest mode is Journey-1 screen work.

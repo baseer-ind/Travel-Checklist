@@ -31,7 +31,9 @@ Legend: **built** (in code and exercised by a test or read end to end) · **part
 | Departure day | Surfaces on Home on the day and day before | not built | There is no Home screen. |
 | Readiness | Progress and "what is still missing" | built | `finish()` lists unticked items by list; missing-essentials panel. |
 | Readiness | Never a score | **conflicts** | Trip and group screens show a percentage (`pct + "%"`). CLAUDE.md forbids a readiness score. |
-| Offline | Full use with no account and no network | **not built** | No IndexedDB or localStorage. Data lives in memory and on the server. Opening the app offline: `GET /api/me` fails and the boot shows "Can't load right now". Edits made while offline are lost if the tab closes. |
+| Offline (signed in) | Boot and use with no network | **built** (browser-tested) | `public/db.js` (IndexedDB) + local-first boot in `app.js`: trips load from the device before the network, an offline reload keeps everything, offline edits persist and sync on reconnect without being overwritten. Verified by `tests/browser.test.js` at 375 px. |
+| Offline (no account) | Full use with no account | not built | Guest/no-account mode is Journey-1 **screen** work; it waits for the Stage 2 build. The store underneath is ready. |
+| Sync | Offline edits reach the server | partly built | Whole-document push via `/api/data` on reconnect (local wins). The per-trip `/api/trips` sync queue with recovered copies is the next step. |
 | Offline | Install to home screen | partly built | Manifest and 192/512/maskable icons exist. No install hint. Name is still "Family Travel Checklist". |
 | Offline | Shell cache | built (unverified offline) | `sw.js` network-first shell cache; never tested with the network off. Google Fonts aren't cached. |
 | Account | Name + password, sync across devices | built | Required before anything works. |
@@ -55,7 +57,7 @@ Legend: **built** (in code and exercised by a test or read end to end) · **part
 
 - **Not renamed to Baggo.** Only `package.json`, `CLAUDE.md` and the docs say Baggo. `index.html` title, `manifest.webmanifest` name and the login screen still say "Family Travel Checklist". The cookie is `tc_session`, the cache is `ftc-shell-v1`.
 - **New accounts get a trip added silently.** `afterLogin()` creates "Trip to Qadian" for an empty account. Generation rule 1 says nothing is added silently.
-- **IDs are per-user integers** (`S.next++`). Two devices creating items offline will produce the same IDs. Blocks local-first; see the architecture plan.
+- **IDs are now random strings** (`nid()` in `app.js`); the server accepts strings and legacy integers. The old per-user counter collided across devices. Verified by the browser test.
 - **Server data cap is 900 KB per user** (`MAX_DATA_BYTES`). Section I's 50 MB local budget can't sync through it.
 - **CSP allows `'unsafe-inline'` scripts** because `index.html` registers the service worker inline. It exists but is weaker than "CSP" suggests.
 - **Notifications** are requested from the group screen. Section I says only from the departure list.
