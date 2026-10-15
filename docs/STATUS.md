@@ -42,6 +42,15 @@ Legend: **built** (in code and exercised by a test or read end to end) · **part
 | Export | Download all my data as JSON | not built | |
 | Export | Delete account and data (self-service) | not built | Only the admin can delete a person. |
 
+## Limits Stage 4 must test
+
+| Limit | Value | Expected behaviour |
+| --- | --- | --- |
+| Server size per trip | 300 KB (serialised JSON) | `PUT` above it returns 413; the trip stays saved on the device |
+| Trips per user on the server | 100 | Creating trip 101 is refused with a clear message |
+| Local budget | 50 MB | Warning at 80% (40 MB); new items refused past 50 MB; export still works |
+| Recovered copies | Kept 7 days | Pruned after 7 days |
+
 ## Other findings
 
 - **Not renamed to Baggo.** Only `package.json`, `CLAUDE.md` and the docs say Baggo. `index.html` title, `manifest.webmanifest` name and the login screen still say "Family Travel Checklist". The cookie is `tc_session`, the cache is `ftc-shell-v1`.

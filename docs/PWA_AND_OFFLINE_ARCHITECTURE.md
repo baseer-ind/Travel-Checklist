@@ -1,4 +1,4 @@
-# PWA and offline architecture (plan, not built)
+# PWA and offline architecture (approved 2026-10-15, not built)
 
 Goal: the device is the source of truth. The server becomes an optional sync and sharing service. The API in `lib/` stays the contract, but it needs the four changes marked **API change**, each with tests.
 
@@ -25,7 +25,7 @@ The trip is the unit everywhere: it is read, written, synced and conflicted as a
 
 Following section H, these fields are added: trip `end`, `destination`, `profile`, `travellers`, `archived`, `updated`; list `order` and kind tags; item `quantity`, `note`, `link`, `mustNotForget`, `order`. **API change:** `sanitizeData` whitelists them with size caps. Today it silently strips any field it doesn't know, so syncing them would drop them.
 
-`visible()` must keep dropping private trips, lists and items. It must also drop notes and links on private items, and the departure (`leave`) list, from every family, admin, share and feed response. Every new field gets a test asserting this.
+`visible()` must keep dropping private trips, lists and items, along with the departure (`leave`) list, from every family, admin, share and feed response. A private item's note and link go with it. Every new field gets a test asserting this. The per-trip endpoints get their own test proving they can't leak private items through any of those responses.
 
 ## 3. Sync (signed-in devices only)
 
@@ -47,7 +47,9 @@ The sync badge has four states (section I): *Saved on this phone* (no account), 
 
 **Conflict (409):** as section I says, the server version replaces the local one on screen and the local version goes to `recovered`. A one-line prompt offers "Put my changes back"; accepting pushes the recovered copy with the new `baseRev`. Conflicts only happen between one person's own devices, because family members read each other's trips but never write them, and group lists are server-side and online-only. This is rare enough that the prompt is acceptable.
 
-**Guest to account:** at sign-up or log-in, every local trip is marked dirty with `baseRev = 0` and pushed. Random IDs mean guest trips and server trips are joined, never merged. One open question: on sign-out, are local trips kept or wiped? On a shared family phone, keeping them leaks one person's private items to the next.
+**Guest to account:** at sign-up or log-in, every local trip is marked dirty with `baseRev = 0` and pushed. Random IDs mean guest trips and server trips are joined, never merged.
+
+**Sign-out** wipes that person's trips, templates and recovered copies from the device. If any trip is dirty, it warns once with two choices, "Sync first" or "Sign out anyway", and nothing else.
 
 ## 4. Service worker
 
@@ -60,20 +62,23 @@ The sync badge has four states (section I): *Saved on this phone* (no account), 
 ## 5. Storage limits and eviction
 
 - `navigator.storage.estimate()` drives the 80% warning against the 50 MB budget. Past the budget, new items are refused and export always works.
-- **Mismatch:** the server caps each user at 900 KB (`MAX_DATA_BYTES`). With per-trip storage I propose a 300 KB cap per trip and 100 trips per user. This needs your approval; the Upstash free-tier size counts against it.
+- Server limits: 300 KB per trip and 100 trips per user, replacing the 900 KB per-user `MAX_DATA_BYTES`.
 - Call `navigator.storage.persist()` after the first tick (Chrome grants it to installed or engaged sites).
-- **Correction to section L:** a compact copy in localStorage does not protect against iOS Safari's 7-day eviction. Safari clears all script-writable storage, localStorage included. The real protections are installing to the home screen (installed web apps are exempt), signing in, and export. The install hint and export reminder carry that weight. This will go in `DECISIONS.md` if approved.
+- **iOS eviction:** there is no localStorage fallback, because Safari's 7-day rule clears localStorage along with IndexedDB. The defences are installing to the home screen (installed web apps are exempt), signing in, and export. The install hint and export reminder carry that weight.
 
 ## 6. Tests and tools
 
 - API (existing runner, no dependency): compare-and-set 200/409, delete with stale rev, string IDs, hash-backed `loadVisible`, privacy on every new field, share codes with string trip IDs, per-trip size cap.
 - Client data layer: `db.js` and `sync.js` sit behind a small storage interface, so the sync logic is tested in Node against an in-memory adapter (no `fake-indexeddb`).
-- Browser walks (375 px, offline): Playwright using the preinstalled Chromium, added as a **dev** dependency. It needs a `DECISIONS.md` entry before it's added.
+- Browser walks (375 px, offline): Playwright, as a **dev** dependency only, run by `npm run test:browser`. `npm test` stays Node-only with no install, so it runs anywhere.
 
-## Order of work (after approval)
+## Order of work
 
-1. API changes plus tests: string IDs, new fields, per-trip hash, compare-and-set. `npm test` green.
-2. `db.js` with boot from IndexedDB; the guest path works with no account or network.
-3. `sync.js` with the badge and recovered copies.
-4. Service worker and manifest rename.
-5. Journey 1 screens. These wait for an approved Stage 2 design, or for an explicit decision to ship Journey 1 on v1 styles.
+1. IndexedDB store (`db.js`); v1 screens boot from it and write to it first.
+2. Random string IDs (client, `sanitizeData`, share route).
+3. Per-trip endpoints with the revision check, the hash-backed store and size caps, plus tests. **Stop and report here.**
+4. Sync queue (`sync.js`), badge, recovered copies, sign-out wipe.
+5. Service worker.
+6. Export and self-service delete.
+
+Journey 1 screens wait for the new Stage 2 design. Until then, the data layer is built and tested against the v1 screens.

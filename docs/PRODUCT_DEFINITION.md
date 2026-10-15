@@ -198,7 +198,7 @@ A trip is a container of lists; a list is a named, typed set of items; a templat
 ### Persistence rules
 
 - Every change is written locally first (IndexedDB) and applied to the screen before any network call.
-- A signed-in device syncs the whole trip document with a revision number. Last write wins per trip, never per item, and the losing version is kept for 7 days as "recovered copy" in Settings.
+- A signed-in device syncs the whole trip document with a revision number. Last write wins per trip, never per item, and the losing version is kept for 7 days as "recovered copy" in Settings, where the user can put it back. Family members only view each other's trips, so a conflict is always one person on two devices.
 - Lists and items never leave the device unless the trip is shared, the user is signed in, or the user exports.
 - Hiding something (private) never produces an activity event; this rule exists in the code today and stays.
 
@@ -216,7 +216,7 @@ Solid arrows always work; dashed arrows need a network and an account.
 | Caching | Shell and templates cached at install; new version activates on next open with a one-line "Updated" toast; API responses are never cached by the worker |
 | Offline edits | All edits are local; the sync badge shows Saved on this phone, Syncing, Synced, or Could not sync with a retry button |
 | Conflicts | Per-trip revision; the server rejects a stale revision, the client fetches, keeps the local version as "recovered copy" and re-applies its edits only if the user confirms |
-| Storage limits | Warn at 80% of a 50 MB local budget; refuse new items past it; export always works |
+| Storage limits | Warn at 80% of a 50 MB local budget; refuse new items past it; export always works. Server: 300 KB per trip, 100 trips per user |
 | Clearing browser data | Loses everything not synced; Settings says so in one sentence and offers export |
 | Permissions | Notifications are asked for only from the departure list, with the reason; denial changes nothing else |
 | Not promised | Background sync and push on iOS; the app says reminders work while it is open |
@@ -279,7 +279,7 @@ The biggest risk is not technical: a public product needs people to invite their
 | --- | --- | --- |
 | Nobody invites their family; the moat is never used | High | Launch with three real groups (one family, one pilgrimage group, one friends trip) before public release; measure invites per trip |
 | Local-first rewrite breaks the working family and admin features | Medium | Keep lib/app.js and its 34 tests as the contract; the rewrite touches the client data layer only |
-| iOS Safari evicts IndexedDB after 7 days of non-use | Medium | Sign-in nudge after the first trip is complete; export reminder; store a compact copy in localStorage as a fallback |
+| iOS Safari evicts IndexedDB after 7 days of non-use | Medium | Install to home screen (installed web apps are not subject to the 7-day rule), sign-in nudge after the first trip is complete, export reminder. No localStorage fallback: Safari evicts it with IndexedDB |
 | Four accents become visual noise | Medium | Each accent is bound to one meaning in the design system; Stage 2 reviews every screen against that table |
 | Name is trademarked or the domain is taken | Medium | Check before Stage 2 |
 | Free tiers (Vercel Hobby, Upstash) are for personal use; a public product may breach terms or limits | High | Move to a paid Vercel plan at public launch; budget the cost before launch |
