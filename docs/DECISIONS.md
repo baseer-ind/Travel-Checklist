@@ -52,3 +52,19 @@ The live v1 app keeps these until v2 replaces it:
 - Remove the readiness percentage from the trip and group screens.
 - Stop adding "Trip to Qadian" to new accounts; make it a starter template the user picks.
 - Finish the Baggo rename: page title, manifest name and short name, login screen.
+
+## 2026-10-16 — Stage 2 "Design_1" (warm paper) approved
+
+Approved design: `Travel_Checklist_PWA_Design_1.zip` (Baggo prototype + Baggo System + component files), designed with the product definition attached. Linked in `docs/DESIGN.md`; tokens extracted to `public/tokens.css`. Section F of the definition is now warm paper, so the paper base is on-spec (no longer flagged). It passes D (3 tabs), E (14 screens) and F (four accents, no dark theme).
+
+## 2026-10-16 — Server background is white, warm paper is the surface
+
+The user's token note called `#F7F4EF` the "paper" base. The approved design system maps it to `--surface` (the one warm off-white) and uses `#FFFFFF` as `--bg`, matching Section F's "pure white with one warm off-white surface". `tokens.css` follows the design system's mapping.
+
+## 2026-10-16 — Design gaps vs definition (resolve when building screens)
+
+Logged here rather than copied into code (CLAUDE.md: the no-readiness-score hard rule overrides the "implement as designed" rule where they conflict):
+
+- **"% ready" is a readiness score.** The Together/Member views label each person `"{pct}% ready"`, and a group load-error says "Showing the last synced readiness". The definition bans a readiness score and the wording "ready to travel". When these screens are built, the number stays (it's progress) but the label becomes **"% packed"**, and the error reads "last synced progress". Not a restyle; a copy change the hard rule requires.
+- **A fifth colour, `--focus` `#1361D1` (blue), is used for the focus ring and links.** The definition names four *accent meanings*; a focus/link colour outside those four is fine and expected (focus must be visible and distinct). Kept, documented as non-meaning, not counted against the four-accent rule.
+- No other D/E/F gaps found. New trip is a modal and Item sheet is a bottom sheet (not tab screens), as the definition expects.
