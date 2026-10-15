@@ -80,3 +80,17 @@ Logged here rather than copied into code (CLAUDE.md: the no-readiness-score hard
 - Verified by `tests/browser.test.js` (Playwright, 375 px): sign-up → create/tick → offline reload keeps data → offline edit survives a second offline reload → back online, edits sync. `npm test` (Node API) stays at 36/36 and installs nothing.
 
 Still pending (next step): the per-trip `/api/trips` sync queue with revisions and recovered copies, and the service-worker rework (fonts, "Updated" toast). No-account guest mode is Journey-1 screen work.
+
+## 2026-10-16 — Per-trip sync queue with recovered copies (data layer, part 3)
+
+`public/sync.js` reconciles the device with the server one trip at a time, completing the "nothing is lost" guarantee:
+
+- **Push:** each changed trip is `PUT /api/trips/:id` with the revision last seen. The engine detects a changed trip by comparing a content signature (server-managed `rev`/`updated` stripped) against the last-synced signature, so no mutation site needs instrumenting.
+- **Conflict (409):** the local version is saved as a **recovered copy** (IndexedDB, pruned after 7 days), then the server's copy replaces it locally and a one-line note is shown. Conflicts only arise between one person's own devices (family members only read each other's trips), as the definition states.
+- **Pull:** trips new on the server are fetched; trips advanced on the server with no local edit fast-forward; trips deleted elsewhere are removed locally when there's no unsynced local edit.
+- **Deletes** made on the device are `DELETE`d with the last-seen revision.
+- `app.js` now syncs through this engine (replacing the whole-document `/api/data` client path); `/api/data` stays on the server for the privacy/family/admin tests. `onApply` runs `normalize(S)` so a pulled-in trip on a fresh device gets a valid current-trip selection.
+
+Verified by `tests/browser.test.js` (Playwright, 375 px): the existing offline/local-first walks plus a **two-device conflict** — device A's edit wins, device B's stale edit is rejected and kept as a recovered copy, and the server holds only the winner's edit. `npm test` (Node API): 36/36. `npm run test:browser`: 5/5.
+
+Next: service-worker rework (self-hosted fonts, "Updated" toast, drop `'unsafe-inline'`); then screens on Design_1. No-account guest mode remains Journey-1 screen work.

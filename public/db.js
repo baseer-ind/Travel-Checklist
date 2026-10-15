@@ -99,6 +99,7 @@
           });
           var meta = t.objectStore("meta");
           meta.delete("state|" + owner);
+          meta.delete("sync|" + owner);
           meta.delete("session");
           t.oncomplete = resolve; t.onerror = resolve; t.onabort = resolve;
         });
@@ -110,6 +111,11 @@
     getSession: function () { return tx("meta", "readonly", function (s) { return s.get("session"); }).then(function (r) { return r ? r.v : null; }).catch(function () { return null; }); },
     setSession: function (sess) { return tx("meta", "readwrite", function (s) { return s.put({ k: "session", v: sess }); }); },
     clearSession: function () { return tx("meta", "readwrite", function (s) { return s.delete("session"); }); },
+
+    // Per-trip sync bookkeeping: { [tripId]: { rev, sig } }. rev = last server revision seen;
+    // sig = the trip's content when it was last in sync, used to detect local edits.
+    getSyncMeta: function (owner) { return tx("meta", "readonly", function (s) { return s.get("sync|" + owner); }).then(function (r) { return r && r.v ? r.v : {}; }).catch(function () { return {}; }); },
+    setSyncMeta: function (owner, m) { return tx("meta", "readwrite", function (s) { return s.put({ k: "sync|" + owner, v: m }); }); },
 
     getTemplates: function (owner) { return getAll("templates").then(function (rows) { return rows.filter(function (r) { return r._owner === owner; }).map(function (r) { return r.tpl; }); }); },
     putTemplate: function (owner, tpl) { return tx("templates", "readwrite", function (s) { return s.put({ _key: ownerKey(owner, tpl.id), _owner: owner, tpl: tpl }); }); },

@@ -1,6 +1,6 @@
 // Service worker: caches the app shell so the page opens offline. API calls always go to the network.
-const CACHE = "ftc-shell-v2";
-const SHELL = ["/", "/index.html", "/style.css?v=1", "/db.js?v=1", "/app.js?v=1", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE = "ftc-shell-v3";
+const SHELL = ["/", "/index.html", "/style.css?v=1", "/db.js?v=1", "/sync.js?v=1", "/app.js?v=1", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
