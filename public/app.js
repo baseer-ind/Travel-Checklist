@@ -50,6 +50,7 @@
   var cfg = { signupEnabled: false };
   var rev = 0, dirty = false, saving = false, saveTimer = null, retryMs = 0, saveState = "saved";
   var view = "app";           // app | account | admin | adminuser | mustchange
+  var offlineBoot = false;    // true when the app was booted from local cache with no network
   var adminGroups = null, adminUsers = null, adminDetail = null, flash = null, lastKey = null, expiredMsg = null;
   var authMode = "login";
   var family = null, unread = 0, adminTab = "people", adminFeed = null, adminTrips = null, member = null;
@@ -75,7 +76,11 @@
 
   /* ================= data model ================= */
   var uid = 1, migrated = false;
-  function nid() { return S.next++; }
+  // Random string IDs: a per-user counter (S.next) collides as soon as two devices add items
+  // offline. These are unique per device and joined (never merged) on sync.
+  function nid() { return "x" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+  function numId(v) { return typeof v === "number" && isFinite(v) ? v : 0; }
+  function persistLocal(isDirty) { if (user && S && window.BaggoDB) BaggoDB.saveState(user.key, S, { dirty: !!isDirty, rev: rev }); }
   function mkItem(e, n) { return { id: nid(), emoji: e, name: n, state: "todo" }; }
   function mkList(name, emoji, items, kind) { var l = { id: nid(), name: name, emoji: emoji, items: (items || []).map(function (i) { return mkItem(i[0], i[1]); }) }; if (kind) l.kind = kind; return l; }
   function mkLeaveList() { return mkList("Before you leave", "🔑", LEAVE_TASKS, "leave"); }
@@ -89,7 +94,7 @@
   function normalize(d) {
     d = d && d.trips ? d : emptyState();
     var max = 0;
-    d.trips.forEach(function (t) { max = Math.max(max, t.id); t.lists.forEach(function (l) { max = Math.max(max, l.id); l.items.forEach(function (i) { max = Math.max(max, i.id); }); }); });
+    d.trips.forEach(function (t) { max = Math.max(max, numId(t.id)); t.lists.forEach(function (l) { max = Math.max(max, numId(l.id)); l.items.forEach(function (i) { max = Math.max(max, numId(i.id)); }); }); });
     d.next = Math.max(d.next || 1, max + 1);
     var keep = S; S = d;      // trips made before "Before you leave" existed get that checklist added
     d.trips.forEach(function (t) { if (!t.lists.some(function (l) { return l.kind === "leave"; })) { t.lists.push(mkLeaveList()); migrated = true; } });
@@ -141,7 +146,7 @@
   /* ================= saving ================= */
   var STATUS_TEXT = { saved: "✓ Saved", pending: "● Unsaved…", saving: "● Saving…", error: "⚠ Not saved — retrying" };
   function setStatus(s) { saveState = s; var e = $("saveStatus"); if (e) { e.textContent = STATUS_TEXT[s]; e.className = "status " + s; } }
-  function touch() { dirty = true; setStatus("pending"); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 500); }
+  function touch() { dirty = true; setStatus("pending"); persistLocal(true); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 500); }
   function flush(keepalive) {
     if (!user || !S) return Promise.resolve();
     if (saving) return Promise.resolve();
@@ -149,7 +154,7 @@
     clearTimeout(saveTimer);
     saving = true; dirty = false; setStatus("saving");
     return api("PUT", "/api/data", { data: S }, keepalive === true).then(function (r) {
-      rev = r.rev; retryMs = 0; setStatus(dirty ? "pending" : "saved");
+      rev = r.rev; retryMs = 0; setStatus(dirty ? "pending" : "saved"); persistLocal(dirty);   // mark the local copy synced
     }).catch(function (e) {
       dirty = true;
       if (e.status === 401) { sessionExpired(); return; }
@@ -169,6 +174,7 @@
     if (document.hidden) { if (dirty && user) flush(true); } else { poll(); pollUnread(); }
   });
   window.addEventListener("pagehide", function () { if (dirty && user) flush(true); });
+  window.addEventListener("online", function () { if (user && dirty && !saving) { retryMs = 0; flush(); } });
 
   /* pick up changes made from another phone / laptop */
   setInterval(function () { poll(); }, 20000);
@@ -427,15 +433,32 @@
 
   function afterLogin() {
     if (user.mustChange) { view = "mustchange"; render(); return Promise.resolve(); }
-    view = "app";
+    view = "app"; offlineBoot = false;
+    if (window.BaggoDB) BaggoDB.setSession({ key: user.key, username: user.username, role: user.role });
     family = null; unread = 0; groups = null; toasted = {}; setTimeout(pollUnread, 800); setTimeout(loadGroups, 600);
     if (dirty && S && lastKey === user.key) { render(); return flush(); }
-    return api("GET", "/api/data").then(function (r) {
-      rev = r.rev; dirty = false; lastKey = user.key;
-      if (r.data) { migrated = false; S = normalize(r.data); setStatus("saved"); render(); if (migrated) touch(); joinPending(); return; }
-      // brand-new account: start with the Qadian packing list already loaded
-      S = emptyState(); var t = mkTrip("Trip to Qadian", "qadian"); S.trips.push(t); S.curTrip = t.id; S.curList = t.lists[0].id;
-      render(); touch(); joinPending();
+    // Local-first: show trips cached on this device immediately, then reconcile with the server.
+    var loadLocal = (window.BaggoDB ? BaggoDB.loadState(user.key) : Promise.resolve(null)).catch(function () { return null; });
+    return loadLocal.then(function (local) {
+      var haveLocal = local && local.trips && local.trips.length;
+      if (haveLocal) { S = normalize(local); lastKey = user.key; if (local.rev != null) rev = local.rev; setStatus(local.dirty ? "pending" : "saved"); render(); }
+      return api("GET", "/api/data").then(function (r) {
+        lastKey = user.key;
+        // Unsynced local edits are the source of truth: push them, don't let the server overwrite them.
+        // (Per-trip conflict handling with recovered copies is the sync-queue step.)
+        if (haveLocal && local.dirty) { dirty = true; setStatus("pending"); joinPending(); return flush(); }
+        rev = r.rev; dirty = false;
+        if (r.data) { migrated = false; S = normalize(r.data); setStatus("saved"); render(); if (migrated) touch(); else persistLocal(false); joinPending(); return; }
+        if (haveLocal) { persistLocal(false); joinPending(); return; }   // server empty but device had trips
+        // brand-new account: start with the Qadian packing list already loaded (v1 behaviour; v2 makes this a template the user picks — see DECISIONS.md)
+        S = emptyState(); var t = mkTrip("Trip to Qadian", "qadian"); S.trips.push(t); S.curTrip = t.id; S.curList = t.lists[0].id;
+        render(); touch(); joinPending();
+      }).catch(function (e) {
+        if (e && e.status === 401) { sessionExpired(); return; }
+        // Offline or server unreachable: keep whatever is cached locally; the app stays usable.
+        if (S && S.trips) { setStatus(dirty || (haveLocal && local.dirty) ? "pending" : "saved"); joinPending(); }
+        else { S = emptyState(); render(); }
+      });
     });
   }
   function joinPending() {
@@ -444,9 +467,22 @@
     api("POST", "/api/groups/join", { code: c }).then(showGroup).catch(function (e) { toast(errText(e)); });
   }
   function logout() {
-    closeSide();
-    if (dirty) { flush(); }
-    api("POST", "/api/logout", {}).catch(function () { }).then(function () { user = null; S = null; dirty = false; rev = 0; view = "app"; authMode = "login"; adminUsers = null; family = null; unread = 0; groups = null; curGroup = null; shared = null; sharePanel = null; toasted = {}; render(); });
+    var key = user ? user.key : null;
+    function finish() {
+      closeSide();
+      api("POST", "/api/logout", {}).catch(function () { }).then(function () {
+        // Sign-out wipes this person's trips from the device (shared-phone privacy; see DECISIONS.md).
+        if (key && window.BaggoDB) BaggoDB.wipeOwner(key);
+        user = null; S = null; dirty = false; rev = 0; view = "app"; authMode = "login"; adminUsers = null; family = null; unread = 0; groups = null; curGroup = null; shared = null; sharePanel = null; toasted = {}; render();
+      });
+    }
+    // If there are unsynced changes and we can't sync now, warn once before wiping them.
+    if (dirty && !navigator.onLine) {
+      confirmBox("Sign out anyway?", "You have changes that haven't synced yet. They're saved on this phone, but signing out removes them from this device.", "Sign out anyway", finish);
+      return;
+    }
+    if (dirty) flush();
+    finish();
   }
 
   /* ================= account + admin ================= */
@@ -992,7 +1028,27 @@
     var first = user ? afterLogin() : Promise.resolve(render());
     return first.then(function () { if (qc) return openShared(qc); });
   }).catch(function (e) {
+    // Offline or server down: if this device has a signed-in session and cached trips, boot anyway.
+    return bootOffline(e);
+  });
+
+  function bootOffline(e) {
+    if (!window.BaggoDB) return showBootError(e);
+    return BaggoDB.getSession().then(function (sess) {
+      if (!sess) return showBootError(e);
+      return BaggoDB.loadState(sess.key).then(function (local) {
+        if (!local || !local.trips || !local.trips.length) return showBootError(e);
+        user = { username: sess.username, key: sess.key, role: sess.role, mustChange: false };
+        lastKey = user.key; S = normalize(local); view = "app"; offlineBoot = true;
+        if (local.rev != null) rev = local.rev;
+        if (local.dirty) dirty = true;   // unsynced edits; the 'online' listener pushes them when the network returns
+        setStatus(local.dirty ? "pending" : "saved"); render();
+        setTimeout(pollUnread, 3000); setTimeout(loadGroups, 3000);   // reconcile when the network returns
+      });
+    }).catch(function () { return showBootError(e); });
+  }
+  function showBootError(e) {
     $("main").innerHTML = ""; var c = el("div", "auth"); c.appendChild(el("div", "big", "😕")); c.appendChild(el("h1", null, "Can't load right now"));
     c.appendChild(el("p", "sub", errText(e))); c.appendChild(btn("btn full", "Try again", function () { location.reload(); })); $("main").appendChild(c);
-  });
+  }
 })();
