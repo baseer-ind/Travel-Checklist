@@ -61,6 +61,26 @@ const qadian = (name) => ({ next: 10, curTrip: 1, curList: 2, trips: [{ id: 1, n
   await test("sharing code: view only, private items hidden", async () => { const r = await amina("POST", "/api/share/1"); assert.equal(r.status, 200); const code = r.body.code; const v = await stranger("GET", "/api/shared/" + code); assert.equal(v.status, 200); assert.equal(v.body.ownerName, "Amina"); assert.ok(!JSON.stringify(v.body).includes("Secret scarf")); await amina("DELETE", "/api/share/1"); assert.equal((await stranger("GET", "/api/shared/" + code)).status, 404); });
   await test("admin reset signed Bilal out everywhere", async () => { assert.equal((await bilal("GET", "/api/data")).status, 401); assert.equal((await bilal("POST", "/api/login", { username: "Bilal", password: "fresh12" })).status, 200); await bilal("POST", "/api/password", { current: "fresh12", newPassword: "secret2" }); });
   await test("group checklist: create, join, pack together", async () => { const g = await amina("POST", "/api/groups", { name: "Qadian crew" }); assert.equal(g.status, 201); const id = g.body.group.id, code = g.body.group.code; const j = await bilal("POST", "/api/groups/join", { code }); assert.equal(j.status, 200); assert.equal(j.body.members.length, 2); const op = await bilal("POST", "/api/groups/" + id + "/op", { op: "addItem", listId: g.body.lists[0].id, name: "Tent" }); assert.equal(op.status, 200); const item = op.body.lists[0].items[0]; const p = await amina("POST", "/api/groups/" + id + "/op", { op: "setState", itemId: item.id, state: "packed" }); assert.equal(p.body.lists[0].items[0].by, "Amina"); assert.equal((await stranger("GET", "/api/groups/" + id)).status, 401); const a = await admin("GET", "/api/admin/groups"); assert.equal(a.body.groups[0].members.length, 2); });
+  await test("per-trip: create, index, get, revision conflict, delete", async () => {
+    const trip = { id: "pt1", name: "Weekend", created: 1, lists: [{ id: "l1", name: "Bag", emoji: "🎒", items: [{ id: "i1", name: "Socks", state: "todo", qty: 3, note: "wool" }] }] };
+    let r = await amina("PUT", "/api/trips/pt1", { baseRev: 0, trip }); assert.equal(r.status, 200); assert.equal(r.body.rev, 1);
+    r = await amina("GET", "/api/trips"); const row = r.body.trips.find((t) => t.id === "pt1"); assert.ok(row && row.rev === 1, "index lists the trip with its rev");
+    r = await amina("GET", "/api/trips/pt1"); assert.equal(r.body.trip.id, "pt1"); assert.equal(r.body.trip.lists[0].items[0].qty, 3); assert.equal(r.body.trip.lists[0].items[0].note, "wool");
+    r = await amina("PUT", "/api/trips/pt1", { baseRev: 0, trip: Object.assign({}, trip, { name: "Changed" }) }); assert.equal(r.status, 409); assert.equal(r.body.rev, 1); assert.equal(r.body.trip.name, "Weekend");
+    r = await amina("PUT", "/api/trips/pt1", { baseRev: 1, trip: Object.assign({}, trip, { name: "Changed" }) }); assert.equal(r.status, 200); assert.equal(r.body.rev, 2);
+    assert.equal((await amina("DELETE", "/api/trips/pt1", { baseRev: 1 })).status, 409);
+    assert.equal((await amina("DELETE", "/api/trips/pt1", { baseRev: 2 })).status, 200);
+    assert.equal((await amina("GET", "/api/trips/pt1")).status, 404);
+  });
+  await test("per-trip: private items never leak to family, admin or strangers", async () => {
+    const trip = { id: "pt2", name: "Secret trip", created: 1, lists: [{ id: "l2", name: "Bag", emoji: "🎒", items: [{ id: "i2", name: "Shared socks", state: "todo" }, { id: "i3", name: "Hidden diary", state: "todo", hidden: true }] }] };
+    assert.equal((await amina("PUT", "/api/trips/pt2", { baseRev: 0, trip })).status, 200);
+    assert.ok(JSON.stringify((await amina("GET", "/api/trips/pt2")).body).includes("Hidden diary"), "owner sees their own private item");
+    const fv = await bilal("GET", "/api/family/amina"); assert.ok(JSON.stringify(fv.body).includes("Shared socks")); assert.ok(!JSON.stringify(fv.body).includes("Hidden diary"), "family never sees a private item");
+    assert.ok(!JSON.stringify((await admin("GET", "/api/admin/users/amina/data")).body).includes("Hidden diary"), "admin never sees a private item");
+    assert.equal((await stranger("GET", "/api/trips/pt2")).status, 401);
+    await amina("DELETE", "/api/trips/pt2", {});
+  });
   await test("logout clears session", async () => { await bilal("POST", "/api/logout", {}); assert.equal((await bilal("GET", "/api/data")).status, 401); });
   await test("static files and PWA assets are served", async () => { for (const p of ["/", "/style.css", "/app.js", "/sw.js", "/manifest.webmanifest", "/icons/icon-192.png"]) { const r = await fetch(base + p); assert.equal(r.status, 200, p); } assert.equal((await fetch(base + "/../package.json")).status, 404); });
   await test("data survives a server restart", async () => { await new Promise((r) => server.close(r)); await new Promise((r) => setTimeout(r, 150)); server = createServer(env); await new Promise((r) => server.listen(0, r)); base = "http://127.0.0.1:" + server.address().port; const c = client(); assert.equal((await c("POST", "/api/login", { username: "Amina", password: "secret9" })).status, 200); const d = await c("GET", "/api/data"); assert.equal(d.body.data.trips[0].name, "Trip to Qadian"); });
