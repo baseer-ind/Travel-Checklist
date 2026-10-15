@@ -2,6 +2,8 @@
 // Uses the preinstalled Chromium via the `playwright` package (dev-only). Run: npm run test:browser
 // Requires: playwright available, and the file store (the default local dev env).
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
 const { chromium } = require("playwright");
 const { createServer } = require("../server");
 
@@ -124,6 +126,46 @@ const assert = require("assert");
     assert.ok(srv.includes("A wins item") && !srv.includes("B loses item"), "server kept the winner's edit only");
 
     await A.close(); await B.close();
+  });
+
+  // A new service-worker version activates cleanly (with the "Updated" toast) and the app still boots offline after it.
+  await test("service worker update activates and the app boots offline afterwards", async () => {
+    const pub = fs.mkdtempSync(path.join(os.tmpdir(), "baggo-pub-"));
+    fs.cpSync(path.join(__dirname, "..", "public"), pub, { recursive: true });
+    const env2 = { ADMIN_USERNAME: "admin", ADMIN_PASSWORD: "x", FAMILY_CODE: "family", DATA_FILE: path.join(os.tmpdir(), "baggo-upd-" + Date.now() + ".json"), SESSION_SECRET: "u", PUBLIC_DIR: pub };
+    const srv = createServer(env2);
+    await new Promise((r) => srv.listen(0, r));
+    const b2 = "http://127.0.0.1:" + srv.address().port;
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const p = await ctx.newPage();
+
+    // sign in and get the first SW controlling the page
+    await p.goto(b2 + "/", { waitUntil: "networkidle" });
+    await p.getByRole("tab", { name: "Create account" }).click();
+    await p.locator("#aName").fill("Upd"); await p.locator("#aPass").fill("secret1"); await p.locator("#aCode").fill("family");
+    await p.getByRole("button", { name: "Create my account" }).click();
+    await p.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await p.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 8000 });
+
+    // ship a new SW version (byte change → new cache name) and ask the page to check for it
+    const swPath = path.join(pub, "sw.js");
+    fs.writeFileSync(swPath, fs.readFileSync(swPath, "utf8").replace("baggo-shell-v4", "baggo-shell-v5"));
+    await p.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
+
+    // the "Updated" toast appears, then the page reloads onto the new version
+    await p.getByText("Updated to the latest version.").waitFor({ timeout: 8000 });
+    await p.waitForTimeout(1800);
+    const activeCache = await p.evaluate(async () => (await caches.keys()).filter((k) => k.indexOf("baggo-shell") === 0));
+    assert.ok(activeCache.includes("baggo-shell-v5") && !activeCache.includes("baggo-shell-v4"), "new cache active, old cache cleaned: " + JSON.stringify(activeCache));
+
+    // offline boot still works after the update
+    await ctx.setOffline(true);
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+
+    await ctx.close();
+    await new Promise((r) => srv.close(r));
+    fs.rmSync(pub, { recursive: true, force: true });
   });
 
   await browser.close();

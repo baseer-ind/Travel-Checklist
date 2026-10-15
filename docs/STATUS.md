@@ -35,7 +35,8 @@ Legend: **built** (in code and exercised by a test or read end to end) · **part
 | Offline (no account) | Full use with no account | not built | Guest/no-account mode is Journey-1 **screen** work; it waits for the Stage 2 build. The store underneath is ready. |
 | Sync | Offline edits reach the server; conflicts keep a recovered copy | **built** (browser-tested) | `public/sync.js`: per-trip push with revision compare-and-set against `/api/trips`; a rejected (409) push keeps the local version as a recovered copy, then takes the server's; then pulls new/advanced trips and removes trips deleted elsewhere. Two-device conflict verified in `tests/browser.test.js`. |
 | Offline | Install to home screen | partly built | Manifest and 192/512/maskable icons exist. No install hint. Name is still "Family Travel Checklist". |
-| Offline | Shell cache | built (unverified offline) | `sw.js` network-first shell cache; never tested with the network off. Google Fonts aren't cached. |
+| Offline | Shell cache | **built** (browser-tested) | `sw.js` cache-first shell, including the self-hosted font. A new version waits (no `skipWaiting`), shows an "Updated" toast, activates cleanly and the app still boots offline afterwards — verified in `tests/browser.test.js`. |
+| Security | CSP no longer needs `'unsafe-inline'` scripts | **built** | SW registration moved out of inline HTML; `script-src 'self'`, `font-src 'self'`, no Google Fonts hosts. (Inline style *attributes* still need `style-src 'unsafe-inline'`.) |
 | Account | Name + password, sync across devices | built | Required before anything works. |
 | Account | Conflict rule | not built | `PUT /api/data` overwrites with no revision check: last write wins for the user's whole data, not per trip. |
 | Family | Code, members' shared lists, activity feed, private hidden | built | Tested. |
