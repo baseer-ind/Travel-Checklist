@@ -180,7 +180,10 @@ async function a11y(page, label) {
     await p.locator("#aName").fill("Upd"); await p.locator("#aPass").fill("secret1"); await p.locator("#aCode").fill("family");
     await p.getByRole("button", { name: "Create my account" }).click();
     await p.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    // Without clients.claim(), the first worker controls only the NEXT navigation — reload once so v1 is the controller.
+    await p.reload({ waitUntil: "networkidle" });
     await p.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 8000 });
+    await p.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
 
     // ship a new SW version (bump the cache name → byte change) and ask the page to check for it
     const swPath = path.join(pub, "sw.js");
@@ -208,10 +211,11 @@ async function a11y(page, label) {
 
   // Journey 1: first open → first tick, no account, offline, nothing sent anywhere.
   await test("guest Journey 1: plan a trip and tick an item offline in <=6 taps, no network", async () => {
-    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });   // SW enabled: no mid-create reload now that claim is gone
     const pg = await ctx.newPage();
     let taps = 0;
-    pg.on("console", () => {});
+    pg.on("framenavigated", (fr) => { if (fr === pg.mainFrame()) navs++; });
+    let navs = 0;
     // record any data-bearing API calls (there must be none in the guest flow)
     const sent = [];
     pg.on("request", (r) => { const u = r.url(); if (/\/api\/(data|trips|signup|login|groups|family)/.test(u)) sent.push(r.method() + " " + u.replace(/^https?:\/\/[^/]+/, "")); });
@@ -251,7 +255,14 @@ async function a11y(page, label) {
     assert.equal(stored.trips, 1, "one guest trip on device");
     assert.ok(stored.lists >= 2 && stored.name === "Weekend in Lisbon", "trip has lists: " + JSON.stringify(stored));
     assert.ok(stored.packed >= 1, "an item is packed");
-    // (offline reload after boot is covered by the local-first and SW-update tests)
+
+    // the service worker is enabled, but with claim gone there is no mid-create reload
+    assert.equal(navs, 1, "no spurious reload during the flow (only the initial load): navs=" + navs);
+
+    // survives an offline reload (local-first; SW serves the shell). A returning guest lands on Home,
+    // where the trip shows as a card.
+    await pg.reload({ waitUntil: "domcontentloaded" });
+    await pg.getByText("Weekend in Lisbon").first().waitFor({ timeout: 8000 });
     await ctx.close();
   });
 
