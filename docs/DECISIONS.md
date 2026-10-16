@@ -50,7 +50,7 @@ The data layer is built and tested against the v1 screens. Journey 1 screens are
 The live v1 app keeps these until v2 replaces it:
 
 - Remove the readiness percentage from the trip and group screens.
-- Stop adding "Trip to Qadian" to new accounts; make it a starter template the user picks.
+- Stop auto-seeding a trip into new accounts (done 2026-10-16; the specific hard-coded packing list was later removed from the product entirely, see below).
 - Finish the Baggo rename: page title, manifest name and short name, login screen.
 
 ## 2026-10-16 — Stage 2 "Design_1" (warm paper) approved
@@ -173,3 +173,22 @@ The signed-in experience is still v1 (visual split during the build, to be remov
 - *signed-in Together/Member* — two family members; a member card shows "% packed" and never "ready"; the own card has the `you` badge; opening a member shows read-only lists with the shared item visible, the **private item hidden**, and **no packing controls**; a11y (≥44/48px targets, ≥14px text, no h-scroll) holds on both screens.
 
 `npm test`: 36. `npm run test:browser`: 12.
+
+## 2026-10-16 — Signed-in v2 Home + Trip; Qadian removed
+
+**Signed-in Home + Trip rebuilt in v2.** `view === "app"` now renders the v2 Home or Trip (a new `appView` sub-state: `home` | `trip`) on the shared centred frame, replacing the v1 welcome/trip rendering (that dead code was deleted).
+- **Home** is the signed-in hub: an empty state for a new account ("Where to next?"), else the next-trip card (soonest upcoming → undated → past), departure-day surfacing on the travel day / day before, the other trips, and "Plan a trip" (still the v1 New-trip modal for now — that screen converts later).
+- **Trip** mirrors the guest Trip with the signed-in extras: private toggle + share + rename + delete, per-item private toggle and remove, essentials (progress + a named missing list, never a score), list tabs/tools, quick-add and finish — reusing the existing signed-in actions (`setState`, `toggleHidden`, `addItem`, `finish`, …) and sync.
+- The v1 sidebar is hidden on these screens; a v2 **overflow sheet** (menu button) carries the nav the sidebar used to: Together, groups, account, admin, open-shared, log out. A "🏠 Home" entry was added to the v1 sidebar footer so the still-v1 screens (account/admin/group) can return to the v2 Home.
+
+**"% ready" → "% packed" applied on the Trip screen.** The v2 Trip shows "X of Y packed" with a **"Z% packed"** label on the progress bar — progress, not a readiness verdict. (The group screen keeps its v1 bare "%" until it converts.)
+
+**Qadian removed entirely** (was a hard-coded packing list). Deleted the `QADIAN` constant and its template branch, the "Use the Qadian packing list" option in the v1 New-trip modal, and the brief pilgrimage opt-in. No profile is left empty: the pilgrimage/religious profile keeps its own generic starters (Essentials, Modesty & prayer, Long journey, Documents); the universal fallback (documents, packing basics, departure day) is unchanged. The `api.test.js` fixture `qadian()` was renamed `sampleTrip()`, and test trip names/group examples were made neutral, so no "Qadian" remains in the product or tests. (The word still appears once in `docs/PRODUCT_DEFINITION.md` — the fixed Stage-1 spec — as a market example; that doc is a source of truth and is left untouched.)
+
+**Fixes found on the way.**
+- *Offline boot for an empty account.* With the auto-seed gone, a signed-in account with no trips couldn't boot offline — `bootOffline` required `local.trips.length` and otherwise showed an error. It now boots any valid session straight into the v2 Home (empty state included) and reconciles when the network returns.
+- *Header overflow at 320px.* The compact app header (back · brand · status · menu) overflowed in transient save states ("● Unsaved…"); the status span is now shrinkable with ellipsis so the row holds at 320px.
+
+**Tests.** API `sampleTrip()` rename kept the 36 API tests green. Browser tests updated for the new flow (a new account lands on the empty Home; trips are created through the modal and opened from Home cards; packing uses the v2 checkbox) and added: the pilgrimage profile still offers starter lists, and the denser signed-in Trip item row holds the a11y floor (≥44/48px, ≥14px, no h-scroll) at 320px.
+
+`npm test`: 36. `npm run test:browser`: 14.

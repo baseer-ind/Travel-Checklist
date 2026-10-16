@@ -48,23 +48,56 @@ async function a11y(page, label) {
   const server = createServer(env);
   await new Promise((r) => server.listen(0, r));
   const base = "http://127.0.0.1:" + server.address().port;
+
+  // New accounts no longer auto-seed a trip; a new account lands on the empty v2 Home.
+  async function signup(pg, name, pass, code = "family") {
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("button", { name: "Sign in" }).click();
+    await pg.getByRole("tab", { name: "Create account" }).click();
+    await pg.locator("#aName").fill(name); await pg.locator("#aPass").fill(pass); await pg.locator("#aCode").fill(code);
+    await pg.getByRole("button", { name: "Create my account" }).click();
+    await pg.locator("#main h1", { hasText: "Hi " + name }).first().waitFor({ timeout: 8000 });   // v2 Home
+  }
+  async function login(pg, name, pass) {
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("button", { name: "Sign in" }).click();
+    await pg.locator("#aName").fill(name); await pg.locator("#aPass").fill(pass);
+    await pg.getByRole("button", { name: "Log in" }).click();
+    await pg.locator("#main h1", { hasText: "Hi " + name }).first().waitFor({ timeout: 8000 });
+  }
+  // Create a trip through the normal New-trip flow (v1 modal over the v2 Home), landing on the v2 Trip.
+  async function createTrip(pg, name, tpl) {
+    await pg.getByRole("button", { name: /^Plan a/ }).click();
+    await pg.locator("#mInput").fill(name);
+    if (tpl) await pg.locator("#mSel").selectOption({ value: tpl });
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.locator("#main h1", { hasText: name }).first().waitFor({ timeout: 8000 });
+  }
+  async function addItem(pg, name) {
+    await pg.getByLabel("New item").fill(name);
+    await pg.getByRole("button", { name: "Add", exact: true }).click();
+    await pg.getByText(name, { exact: true }).first().waitFor({ timeout: 8000 });
+  }
+  // Open a trip from its v2 Home card (scoped to .v2-trip so it never matches the hidden v1 sidebar).
+  async function openTrip(pg, name) {
+    const card = pg.locator(".v2-trip", { hasText: name }).first();
+    await card.waitFor({ timeout: 20000 });
+    await card.click();
+    await pg.locator("#main h1", { hasText: name }).first().waitFor({ timeout: 8000 });
+  }
+
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 375, height: 812 } });
   const page = await context.newPage();
 
   await test("sign up, create a trip, add and tick an item", async () => {
-    await page.goto(base + "/", { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await page.getByRole("tab", { name: "Create account" }).click();
-    await page.locator("#aName").fill("Walker");
-    await page.locator("#aPass").fill("secret1");
-    await page.locator("#aCode").fill("family");
-    await page.getByRole("button", { name: "Create my account" }).click();
-    // brand-new account lands on the seeded "Trip to Qadian"
-    await page.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
-    await page.getByLabel("New item").fill("Travel pillow");
-    await page.getByRole("button", { name: "Add ➕" }).click();
-    await page.getByText("Travel pillow").waitFor();
+    await signup(page, "Walker", "secret1");
+    // a brand-new account lands on the empty v2 Home — nothing is seeded
+    await page.getByRole("heading", { name: "Where to next?" }).waitFor({ timeout: 8000 });
+    await createTrip(page, "Trip to Tokyo", "starter");
+    await addItem(page, "Travel pillow");
+    await page.getByRole("checkbox", { name: "Pack: Travel pillow" }).click();
+    await page.getByRole("checkbox", { name: "Packed: Travel pillow" }).waitFor({ timeout: 8000 });
     // wait for the save to land (status badge → Saved)
     await page.getByText("✓ Saved").waitFor({ timeout: 8000 });
   });
@@ -72,15 +105,15 @@ async function a11y(page, label) {
   await test("offline reload keeps the trip and item (local-first boot)", async () => {
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
-    // served from the SW shell cache + IndexedDB, with no network
-    await page.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
-    await page.getByText("Travel pillow").waitFor({ timeout: 8000 });
-    // and an edit made offline survives another offline reload
-    await page.getByLabel("New item").fill("Eye mask");
-    await page.getByRole("button", { name: "Add ➕" }).click();
-    await page.getByText("Eye mask").waitFor();
+    // served from the SW shell cache + IndexedDB, with no network — lands on the v2 Home
+    await page.locator("#main h1", { hasText: "Hi Walker" }).first().waitFor({ timeout: 8000 });
+    // open it: the packed item survived, and an edit made offline survives another offline reload
+    await openTrip(page, "Trip to Tokyo");
+    await page.getByText("Travel pillow").first().waitFor({ timeout: 8000 });
+    await addItem(page, "Eye mask");
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.getByText("Eye mask").waitFor({ timeout: 8000 });
+    await openTrip(page, "Trip to Tokyo");
+    await page.getByText("Eye mask").first().waitFor({ timeout: 8000 });
   });
 
   await test("item ids are random strings, not a shared counter", async () => {
@@ -110,36 +143,25 @@ async function a11y(page, label) {
     const B = await browser.newContext({ viewport: { width: 375, height: 812 } });
     const a = await A.newPage(), b = await B.newPage();
 
-    // Device A signs up and seeds its trip.
-    await a.goto(base + "/", { waitUntil: "networkidle" });
-    await a.getByRole("button", { name: "Sign in" }).click();
-    await a.getByRole("tab", { name: "Create account" }).click();
-    await a.locator("#aName").fill("Dyad"); await a.locator("#aPass").fill("secret1"); await a.locator("#aCode").fill("family");
-    await a.getByRole("button", { name: "Create my account" }).click();
-    await a.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    // Device A signs up and makes a trip — createTrip leaves A on the new trip's screen.
+    await signup(a, "Dyad", "secret1");
+    await createTrip(a, "Trip to Tokyo", "starter");
     await a.getByText("✓ Saved").waitFor({ timeout: 8000 });
 
-    // Device B logs into the same account and pulls the trip.
-    await b.goto(base + "/", { waitUntil: "networkidle" });
-    await b.getByRole("button", { name: "Sign in" }).click();
-    await b.locator("#aName").fill("Dyad"); await b.locator("#aPass").fill("secret1");
-    await b.getByRole("button", { name: "Log in" }).click();
-    await b.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    // Device B logs into the same account, pulls the trip and opens it from Home.
+    await login(b, "Dyad", "secret1");
+    await openTrip(b, "Trip to Tokyo");
     await b.getByText("✓ Saved").waitFor({ timeout: 8000 });
 
     // B goes offline so it can't see A's next change.
     await B.setOffline(true);
 
-    // A (online) edits the trip and syncs → server revision advances.
-    await a.getByLabel("New item").fill("A wins item");
-    await a.getByRole("button", { name: "Add ➕" }).click();
-    await a.getByText("A wins item").waitFor();
+    // A (online, already on the trip) edits it and syncs → server revision advances.
+    await addItem(a, "A wins item");
     await a.getByText("✓ Saved").waitFor({ timeout: 8000 });
 
     // B (offline) edits the SAME trip at the now-stale revision.
-    await b.getByLabel("New item").fill("B loses item");
-    await b.getByRole("button", { name: "Add ➕" }).click();
-    await b.getByText("B loses item").waitFor();
+    await addItem(b, "B loses item");
 
     // B reconnects → its push is rejected (409); B keeps a recovered copy and takes A's version.
     await B.setOffline(false);
@@ -179,11 +201,11 @@ async function a11y(page, label) {
     await p.getByRole("tab", { name: "Create account" }).click();
     await p.locator("#aName").fill("Upd"); await p.locator("#aPass").fill("secret1"); await p.locator("#aCode").fill("family");
     await p.getByRole("button", { name: "Create my account" }).click();
-    await p.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await p.locator("#main h1", { hasText: "Hi Upd" }).first().waitFor({ timeout: 8000 });   // v2 Home
     // Without clients.claim(), the first worker controls only the NEXT navigation — reload once so v1 is the controller.
     await p.reload({ waitUntil: "networkidle" });
     await p.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 8000 });
-    await p.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await p.locator("#main h1", { hasText: "Hi Upd" }).first().waitFor({ timeout: 8000 });
 
     // ship a new SW version (bump the cache name → byte change) and ask the page to check for it
     const swPath = path.join(pub, "sw.js");
@@ -202,7 +224,7 @@ async function a11y(page, label) {
     // offline boot still works after the update
     await ctx.setOffline(true);
     await p.reload({ waitUntil: "domcontentloaded" });
-    await p.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await p.locator("#main h1", { hasText: "Hi Upd" }).first().waitFor({ timeout: 8000 });
 
     await ctx.close();
     await new Promise((r) => srv.close(r));
@@ -277,9 +299,9 @@ async function a11y(page, label) {
     await pg.getByRole("heading", { name: "Plan a trip" }).waitFor({ timeout: 8000 });
     await pg.getByRole("radio", { name: /Family/ }).click();   // show starter lists
     await a11y(pg, "New trip");
-    await pg.getByLabel("Trip name").fill("Trip to Qadian");
+    await pg.getByLabel("Trip name").fill("Trip to Tokyo");
     await pg.getByRole("button", { name: "Create trip" }).click();
-    await pg.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await pg.getByRole("heading", { name: "Trip to Tokyo" }).waitFor({ timeout: 8000 });
     await pg.waitForTimeout(100);
     await a11y(pg, "Trip");
     await ctx.close();
@@ -440,40 +462,26 @@ async function a11y(page, label) {
     // Omar: an account in the family with a shared item (packed) and a private item.
     const O = await browser.newContext({ viewport: { width: 375, height: 812 } });
     const o = await O.newPage();
-    await o.goto(base + "/", { waitUntil: "networkidle" });
-    await o.getByRole("button", { name: "Sign in" }).click();
-    await o.getByRole("tab", { name: "Create account" }).click();
-    await o.locator("#aName").fill("Omar"); await o.locator("#aPass").fill("secret1"); await o.locator("#aCode").fill("family");
-    await o.getByRole("button", { name: "Create my account" }).click();
-    await o.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
-    await o.getByLabel("New item").fill("Beach towel");
-    await o.getByRole("button", { name: "Add ➕" }).click();
-    await o.getByText("Beach towel").waitFor();
-    await o.getByRole("button", { name: "Packed: Beach towel" }).click();   // pack the shared item
-    await o.getByLabel("New item").fill("OmarSecret");
-    await o.getByRole("button", { name: "Add ➕" }).click();
-    await o.getByText("OmarSecret").waitFor();
+    await signup(o, "Omar", "secret1");
+    await createTrip(o, "Trip to Tokyo", "starter");
+    await addItem(o, "Beach towel");
+    await o.getByRole("checkbox", { name: "Pack: Beach towel" }).click();   // pack the shared item
+    await addItem(o, "OmarSecret");
     await o.getByRole("button", { name: "Shared with family: OmarSecret" }).click();   // toggle to private
     await o.getByText("✓ Saved").waitFor({ timeout: 10000 });
 
     // Nadia: a second account in the same family; packs one item so her own card shows progress.
     const N = await browser.newContext({ viewport: { width: 375, height: 812 } });
     const n = await N.newPage();
-    await n.goto(base + "/", { waitUntil: "networkidle" });
-    await n.getByRole("button", { name: "Sign in" }).click();
-    await n.getByRole("tab", { name: "Create account" }).click();
-    await n.locator("#aName").fill("Nadia"); await n.locator("#aPass").fill("secret2"); await n.locator("#aCode").fill("family");
-    await n.getByRole("button", { name: "Create my account" }).click();
-    await n.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
-    await n.getByLabel("New item").fill("Sunhat");
-    await n.getByRole("button", { name: "Add ➕" }).click();
-    await n.getByText("Sunhat").waitFor();
-    await n.getByRole("button", { name: "Packed: Sunhat" }).click();
+    await signup(n, "Nadia", "secret2");
+    await createTrip(n, "Trip to Tokyo", "starter");
+    await addItem(n, "Sunhat");
+    await n.getByRole("checkbox", { name: "Pack: Sunhat" }).click();
     await n.getByText("✓ Saved").waitFor({ timeout: 10000 });
 
-    // Nadia opens Together (v2): sidebar drawer → Family.
-    await n.getByRole("button", { name: "☰ Trips" }).click();
-    await n.getByRole("button", { name: /Family/ }).click();
+    // Nadia opens Together (v2) via the overflow menu.
+    await n.getByRole("button", { name: /Menu/ }).click();
+    await n.getByRole("button", { name: "Together" }).click();
     await n.getByRole("heading", { name: "Together" }).waitFor({ timeout: 8000 });
 
     // two members, each card carries a "% packed" figure (progress, not a readiness score)
@@ -496,6 +504,39 @@ async function a11y(page, label) {
 
     await a11y(n, "Member (375px)");
     await O.close(); await N.close();
+  });
+
+  // No profile is left with zero ready-made lists, and the New-trip flow offers no removed template option.
+  await test("New-trip: the pilgrimage/religious profile still offers real starter lists", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await pg.getByLabel("Trip name").fill("Pilgrimage trip");
+    await pg.getByRole("radio", { name: /Pilgrimage/ }).click();
+    assert.ok(await pg.getByRole("checkbox").count() >= 2, "pilgrimage profile offers starter lists (not left empty)");
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.locator("#main h1", { hasText: "Pilgrimage trip" }).first().waitFor({ timeout: 8000 });
+    const lists = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      return all.map((x) => x.trip).find((t) => t.name === "Pilgrimage trip").lists.map((l) => l.name);
+    });
+    assert.ok(lists.length >= 2, "trip gets real starter lists: " + JSON.stringify(lists));
+    await ctx.close();
+  });
+
+  // The signed-in Trip row is denser than the guest row (adds private-toggle + remove) — hold the a11y floor at 320px.
+  await test("signed-in v2 Trip: dense item row holds a11y at 320px", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 320, height: 720 } });
+    const pg = await ctx.newPage();
+    await signup(pg, "Tess", "secret1");
+    await createTrip(pg, "Narrow trip", "starter");
+    await addItem(pg, "Travel adapter");
+    await pg.getByRole("button", { name: "Shared with family: Travel adapter" }).click();   // make it private (shows the tag + eye-on)
+    await pg.waitForTimeout(120);
+    await a11y(pg, "Signed-in Trip (320px)");
+    await ctx.close();
   });
 
   await browser.close();
