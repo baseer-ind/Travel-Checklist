@@ -23,6 +23,8 @@ function createServer(e) {
     if (url.pathname.startsWith("/api/")) return app(req, res);
     let p = path.normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
     if (p === "/" || p === "\\") p = "/index.html";
+    if (p === "/privacy") p = "/privacy.html";    // clean URLs (Vercel maps these too)
+    if (p === "/terms") p = "/terms.html";
     const file = path.join(PUB, p);
     if (!file.startsWith(PUB)) { res.statusCode = 403; return res.end(); }
     fs.readFile(file, (err, data) => {

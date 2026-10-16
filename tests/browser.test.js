@@ -644,6 +644,30 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
+  // A trip with a travel date shows the live Days/Hours/Mins/Secs countdown, ticking every second.
+  await test("trip with a travel date shows the live countdown boxes", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    await signup(pg, "Timer", "secret1");
+    await createTrip(pg, "Dated trip");
+    // set a travel date via the countdown control
+    await pg.getByRole("button", { name: "Set travel date" }).click();
+    await pg.locator("#mInput").fill("2030-12-25");
+    await pg.getByRole("button", { name: "Save date" }).click();
+    // the live countdown renders with the four labelled boxes
+    await pg.locator('[role="timer"]').waitFor({ timeout: 8000 });
+    for (const lbl of ["Days", "Hours", "Mins", "Secs"]) {
+      assert.ok(await pg.locator(".v2-cd-box", { hasText: lbl }).count() >= 1, "countdown box present: " + lbl);
+    }
+    // and the seconds box ticks (live, self-updating)
+    const secsBox = pg.locator(".v2-cd-box").last().locator("b");
+    const a = await secsBox.textContent();
+    await pg.waitForTimeout(1200);
+    const b = await secsBox.textContent();
+    assert.notEqual(a, b, "seconds update live (" + a + " -> " + b + ")");
+    await ctx.close();
+  });
+
   await browser.close();
   await new Promise((r) => server.close(r));
   console.log("\n" + passed + " passed, " + failed + " failed");

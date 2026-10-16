@@ -1,12 +1,12 @@
 {
-  "name": "Family Travel Checklist",
-  "short_name": "Checklist",
+  "name": "Baggo",
+  "short_name": "Baggo",
   "description": "Pack together: trips, checklists, countdown and a family view.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#fdf8fb",
-  "theme_color": "#fdf8fb",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },

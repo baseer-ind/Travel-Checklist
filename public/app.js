@@ -326,6 +326,51 @@
     cdTimer = setInterval(function () { if (!document.body.contains(grid)) { clearInterval(cdTimer); cdTimer = null; return; } tick(); }, 1000);
     return box;
   }
+  // Design_1 live countdown for the v2 Trip (interactive: onSet/onClear) and Home card (opts.mini).
+  // The 1-second tick stops itself once its grid leaves the DOM (screen change), so it never leaks.
+  function v2Countdown(t, opts) {
+    opts = opts || {};
+    var d = parseDay(t.travelDate);
+    var box = el("div", "v2-cd" + (opts.mini ? " mini" : ""));
+    if (!d) {
+      if (opts.mini) return null;   // Home card shows nothing until a date is set
+      var row = el("div", "v2-cd-top");
+      row.appendChild(el("span", "v2-cd-date", "No travel date yet"));
+      if (opts.onSet) row.appendChild(btn("v2-btn sec", "Set travel date", opts.onSet));
+      box.appendChild(row); return box;
+    }
+    if (!opts.mini) {
+      var top = el("div", "v2-cd-top");
+      top.appendChild(el("span", "v2-cd-date", "📅 " + d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "long", year: "numeric" })));
+      if (opts.onSet || opts.onClear) {
+        var acts = el("div", "acts");
+        if (opts.onSet) { var ch = el("button", "v2-iconbtn"); ch.type = "button"; ch.setAttribute("aria-label", "Change travel date"); ch.title = "Change date"; ch.appendChild(gsvg(G.pencil)); ch.addEventListener("click", opts.onSet); acts.appendChild(ch); }
+        if (opts.onClear) { var rm = el("button", "v2-iconbtn"); rm.type = "button"; rm.setAttribute("aria-label", "Remove travel date"); rm.title = "Remove date"; rm.appendChild(gsvg(G.skip)); rm.addEventListener("click", opts.onClear); acts.appendChild(rm); }
+        top.appendChild(acts);
+      }
+      box.appendChild(top);
+    }
+    var grid = el("div", "v2-cd-boxes"); grid.setAttribute("role", "timer"); grid.setAttribute("aria-label", "Time until the trip");
+    var vals = {};
+    [["d", "Days"], ["h", "Hours"], ["m", "Mins"], ["s", "Secs"]].forEach(function (x) { var c = el("div", "v2-cd-box"); var n = el("b", null, "0"); vals[x[0]] = n; c.appendChild(n); c.appendChild(el("span", null, x[1])); grid.appendChild(c); });
+    box.appendChild(grid);
+    var note = opts.mini ? null : el("div", "v2-cd-note"); if (note) box.appendChild(note);
+    var toGo = opts.counts ? opts.counts.t : 0;
+    function stop() { if (box._timer) { clearInterval(box._timer); box._timer = null; } }
+    function tick() {
+      var ms = d - new Date();
+      if (ms > 0) {
+        var s = Math.floor(ms / 1000), days = Math.floor(s / 86400);
+        vals.d.textContent = days; vals.h.textContent = pad2(Math.floor(s % 86400 / 3600)); vals.m.textContent = pad2(Math.floor(s % 3600 / 60)); vals.s.textContent = pad2(s % 60);
+        grid.style.display = "grid";
+        if (note) note.textContent = (days <= 3 && toGo > 0) ? "🧳 " + toGo + (toGo === 1 ? " item" : " items") + " still to pack" : (days === 0 ? "Tomorrow's the day! 🌟" : "");
+      } else if (ms > -86400000) { grid.style.display = "none"; if (note) note.textContent = "🎉 Today's the day — safe travels! ✈️"; stop(); }
+      else { grid.style.display = "none"; if (note) note.textContent = "This trip's date has passed."; stop(); }
+    }
+    tick();
+    box._timer = setInterval(function () { if (!document.body.contains(grid)) { clearInterval(box._timer); box._timer = null; return; } tick(); }, 1000);
+    return box;
+  }
 
   /* ================= auth screens ================= */
   function field(id, label, type, autocomplete) {
@@ -338,64 +383,106 @@
     var f = field(id, label, "password", autocomplete); var row = el("div", "pwrow"); var show = btn("", "Show", function () { f.input.type = f.input.type === "password" ? "text" : "password"; show.textContent = f.input.type === "password" ? "Show" : "Hide"; });
     show.setAttribute("aria-label", "Show or hide " + label.toLowerCase()); f.wrap.appendChild(row); row.appendChild(f.input); row.appendChild(show); return f;
   }
+  // v2 helpers for signed-out / form screens (brand bar, legal footer, password field, label field).
+  function v2Brandbar(wrap) {
+    var top = el("div", "v2-top");
+    var brand = el("div", "v2-brand"); brand.appendChild(el("span", "dot")); brand.appendChild(document.createTextNode("Baggo"));
+    top.appendChild(brand); wrap.appendChild(top); return top;
+  }
+  function v2Footer(parent) {
+    var f = el("div", "v2-footer");
+    var p = el("a", null, "Privacy"); p.href = "/privacy"; p.target = "_blank"; p.rel = "noopener";
+    var t = el("a", null, "Terms"); t.href = "/terms"; t.target = "_blank"; t.rel = "noopener";
+    f.appendChild(p); f.appendChild(t); parent.appendChild(f);
+  }
+  function v2Field(id, label, type, autocomplete, placeholder) {
+    var f = el("label", "v2-field"); f.appendChild(el("span", null, label));
+    var input = el("input", "v2-input"); input.id = id; input.type = type || "text"; if (autocomplete) input.autocomplete = autocomplete; if (placeholder) input.placeholder = placeholder; input.setAttribute("aria-label", label);
+    f.appendChild(input); return { wrap: f, input: input };
+  }
+  function v2PwField(id, label, autocomplete) {
+    var f = el("label", "v2-field"); f.appendChild(el("span", null, label));
+    var row = el("div", "v2-pw");
+    var input = el("input", "v2-input"); input.id = id; input.type = "password"; input.autocomplete = autocomplete; input.setAttribute("aria-label", label);
+    var peek = el("button", "peek", "Show"); peek.type = "button"; peek.setAttribute("aria-label", "Show " + label.toLowerCase());
+    peek.addEventListener("click", function () { var hid = input.type === "password"; input.type = hid ? "text" : "password"; peek.textContent = hid ? "Hide" : "Show"; peek.setAttribute("aria-label", (hid ? "Hide " : "Show ") + label.toLowerCase()); });
+    row.appendChild(input); row.appendChild(peek); f.appendChild(row); return { wrap: f, input: input };
+  }
   function renderAuth() {
-    document.body.className = "guest";
-    var main = $("main"); main.innerHTML = "";
-    var card = el("div", "auth");
-    card.appendChild(el("div", "big", "✈️")); card.appendChild(el("h1", null, "Family Travel Checklist"));
-    card.appendChild(el("p", "sub", "Log in to see your trips on any phone or laptop."));
+    var wrap = gShell(false); v2Brandbar(wrap);
+    var narrow = el("div", "v2-narrow"); wrap.appendChild(narrow);
+    var signup = cfg.signupEnabled && authMode === "signup";
+    var head = el("div", "v2-authhead");
+    var mark = el("div", "mark"); var sv = gsvg(G.bag, 2); sv.setAttribute("width", 26); sv.setAttribute("height", 26); mark.appendChild(sv); head.appendChild(mark);
+    head.appendChild(el("h1", "v2-h1", signup ? "Create your account" : "Welcome back"));
+    head.appendChild(el("p", "v2-sub", "Pack together, across your phones and laptops."));
+    narrow.appendChild(head);
+    var card = el("div", "v2-card"); card.style.cssText = "display:flex;flex-direction:column;gap:14px"; narrow.appendChild(card);
     if (cfg.signupEnabled) {
-      var tabs = el("div", "tabs"); tabs.setAttribute("role", "tablist");
+      var seg = el("div", "v2-seg"); seg.setAttribute("role", "tablist"); seg.setAttribute("aria-label", "Log in or create account");
       [["login", "Log in"], ["signup", "Create account"]].forEach(function (x) {
-        var t = btn("tab" + (authMode === x[0] ? " on" : ""), x[1], function () { authMode = x[0]; expiredMsg = null; renderAuth(); });
-        t.setAttribute("role", "tab"); t.setAttribute("aria-selected", authMode === x[0] ? "true" : "false"); tabs.appendChild(t);
+        var b = el("button", null, x[1]); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", authMode === x[0] ? "true" : "false");
+        b.addEventListener("click", function () { authMode = x[0]; expiredMsg = null; renderAuth(); }); seg.appendChild(b);
       });
-      card.appendChild(tabs);
+      card.appendChild(seg);
     } else authMode = "login";
-    var form = document.createElement("form"); form.noValidate = true;
-    var err = el("div", "err"); err.id = "aErr"; err.setAttribute("role", "alert"); err.style.display = "none";
-    if (expiredMsg) { err.style.display = "block"; err.textContent = expiredMsg; }
-    var name = field("aName", "Your name", "text", "username"), pw = pwField("aPass", "Password", authMode === "signup" ? "new-password" : "current-password");
-    form.appendChild(err); form.appendChild(name.wrap); form.appendChild(pw.wrap);
-    var code = null; if (authMode === "signup") { code = field("aCode", "Family code (ask the admin)", "text", "off"); form.appendChild(code.wrap); }
-    var go = el("button", "btn full", authMode === "signup" ? "Create my account" : "Log in"); go.type = "submit"; go.id = "aSubmit"; form.appendChild(go);
+    if (expiredMsg) { var exm = el("p", "v2-alert bad", expiredMsg); exm.setAttribute("role", "alert"); card.appendChild(exm); }
+    var err = el("p", "v2-alert bad"); err.id = "aErr"; err.setAttribute("role", "alert"); err.style.display = "none"; card.appendChild(err);
+    var form = document.createElement("form"); form.noValidate = true; form.style.cssText = "display:flex;flex-direction:column;gap:12px"; card.appendChild(form);
+    var name = v2Field("aName", "Your name", "text", "username"), pw = v2PwField("aPass", "Password", signup ? "new-password" : "current-password");
+    form.appendChild(name.wrap); form.appendChild(pw.wrap);
+    var code = null; if (signup) { code = v2Field("aCode", "Family code (ask the admin)", "text", "off"); form.appendChild(code.wrap); }
+    var go = el("button", "v2-btn full", signup ? "Create my account" : "Log in"); go.type = "submit"; go.id = "aSubmit"; form.appendChild(go);
+    if (signup) {
+      var agree = el("p", "v2-fine"); agree.appendChild(document.createTextNode("By creating an account you agree to the "));
+      var tl = el("a", null, "Terms"); tl.href = "/terms"; tl.target = "_blank"; tl.rel = "noopener"; agree.appendChild(tl);
+      agree.appendChild(document.createTextNode(" and "));
+      var pl = el("a", null, "Privacy Policy"); pl.href = "/privacy"; pl.target = "_blank"; pl.rel = "noopener"; agree.appendChild(pl);
+      agree.appendChild(document.createTextNode(". Baggo is for ages 16 and over."));
+      form.appendChild(agree);
+    }
     form.addEventListener("submit", function (ev) {
       ev.preventDefault(); err.style.display = "none"; expiredMsg = null;
       var nm = name.input.value.trim(), pass = pw.input.value;
       if (!nm || !pass) { err.textContent = "Please enter your name and password."; err.style.display = "block"; return; }
       go.disabled = true; go.textContent = "Please wait…";
       var body = { username: nm, password: pass }; if (code) body.code = code.input.value.trim();
-      api("POST", authMode === "signup" ? "/api/signup" : "/api/login", body).then(function (r) { user = r.user; return afterLogin(); }).catch(function (e) {
-        err.textContent = errText(e); err.style.display = "block"; go.disabled = false; go.textContent = authMode === "signup" ? "Create my account" : "Log in";
+      api("POST", signup ? "/api/signup" : "/api/login", body).then(function (r) { user = r.user; return afterLogin(); }).catch(function (e) {
+        err.textContent = errText(e); err.style.display = "block"; go.disabled = false; go.textContent = signup ? "Create my account" : "Log in";
       });
     });
-    card.appendChild(form);
-    card.appendChild(el("p", "fine", authMode === "signup" ? "Your family and the admin can see your lists, except items you mark 🙈 private." : "Forgot your password? Ask the admin to reset it for you."));
-    var sc = el("div", "list-tools"); sc.style.justifyContent = "center"; sc.appendChild(btn("link", "👀 Have a sharing code? View a list", askSharedCode)); card.appendChild(sc);
-    var gl = el("div", "list-tools"); gl.style.justifyContent = "center"; gl.appendChild(btn("link", "← Continue without an account", function () { enterGuest(); })); card.appendChild(gl);
-    main.appendChild(card); renderSide(); setTimeout(function () { var f = document.activeElement; if (!f || f === document.body) name.input.focus(); }, 30);
+    card.appendChild(el("p", "v2-fine", signup ? "Your family and the admin can see your lists, except items you mark private." : "Forgot your password? Ask the admin to reset it for you."));
+    var links = el("div", "v2-linkrow");
+    links.appendChild(btn("v2-link", "Have a sharing code? View a list", askSharedCode));
+    links.appendChild(btn("v2-link", "Continue without an account", function () { enterGuest(); }));
+    narrow.appendChild(links);
+    v2Footer(narrow);
+    setTimeout(function () { var f = document.activeElement; if (!f || f === document.body) name.input.focus(); }, 30);
   }
   function renderMustChange() {
-    document.body.className = "";
-    var main = $("main"); main.innerHTML = "";
-    var card = el("div", "auth"); card.appendChild(el("div", "big", "🔑")); card.appendChild(el("h1", null, "Choose a new password"));
-    card.appendChild(el("p", "sub", "The admin gave you a temporary password. Pick your own to continue."));
-    card.appendChild(passwordForm(true)); main.appendChild(card); renderSide();
+    var wrap = gShell(false); v2Brandbar(wrap);
+    var narrow = el("div", "v2-narrow"); wrap.appendChild(narrow);
+    var head = el("div", "v2-authhead");
+    var mark = el("div", "mark"); mark.style.background = "var(--private-bg)"; mark.style.color = "var(--private-fg)"; var sv = gsvg(G.eyeoff, 2); sv.setAttribute("width", 26); sv.setAttribute("height", 26); mark.appendChild(sv); head.appendChild(mark);
+    head.appendChild(el("h1", "v2-h1", "Choose a new password"));
+    head.appendChild(el("p", "v2-sub", "The admin gave you a temporary password. Pick your own to continue."));
+    narrow.appendChild(head);
+    var card = el("div", "v2-card"); card.appendChild(passwordForm(true)); narrow.appendChild(card);
   }
   function passwordForm(forced) {
-    var form = document.createElement("form"); form.noValidate = true;
-    var msg = el("div", "err"); msg.setAttribute("role", "alert"); msg.style.display = "none";
-    var cur = pwField("pCur", forced ? "Temporary password" : "Current password", "current-password"), n1 = pwField("pNew", "New password (6+ characters)", "new-password"), n2 = pwField("pNew2", "New password again", "new-password");
+    var form = document.createElement("form"); form.noValidate = true; form.style.cssText = "display:flex;flex-direction:column;gap:12px";
+    var msg = el("p", "v2-alert bad"); msg.setAttribute("role", "alert"); msg.style.display = "none";
+    var cur = v2PwField("pCur", forced ? "Temporary password" : "Current password", "current-password"), n1 = v2PwField("pNew", "New password (6+ characters)", "new-password"), n2 = v2PwField("pNew2", "New password again", "new-password");
     form.appendChild(msg); form.appendChild(cur.wrap); form.appendChild(n1.wrap); form.appendChild(n2.wrap);
-    var go = el("button", "btn full", "Save new password"); go.type = "submit"; form.appendChild(go);
+    var go = el("button", "v2-btn full", "Save new password"); go.type = "submit"; form.appendChild(go);
     form.addEventListener("submit", function (ev) {
-      ev.preventDefault(); msg.style.display = "none"; msg.className = "err";
+      ev.preventDefault(); msg.style.display = "none"; msg.className = "v2-alert bad";
       if (n1.input.value !== n2.input.value) { msg.textContent = "The two new passwords don't match."; msg.style.display = "block"; return; }
       go.disabled = true;
       api("POST", "/api/password", { current: cur.input.value, newPassword: n1.input.value }).then(function (r) {
         user = r.user; if (forced) return afterLogin();
-        msg.className = "okmsg"; msg.textContent = "✓ Password changed. Other devices have been signed out."; msg.style.display = "block"; form.reset(); go.disabled = false;
-      }).catch(function (e) { msg.textContent = errText(e); msg.style.display = "block"; go.disabled = false; });
+        msg.className = "v2-alert good"; msg.textContent = "✓ Password changed. Other devices have been signed out."; msg.style.display = "block"; form.reset(); go.disabled = false;
+      }).catch(function (e) { msg.className = "v2-alert bad"; msg.textContent = errText(e); msg.style.display = "block"; go.disabled = false; });
     });
     return form;
   }
@@ -1072,6 +1159,7 @@
     }
     wrap.appendChild(el("div", "v2-kicker", "Next up"));
     wrap.appendChild(tripCardV2(next, c, true));
+    var nextCd = v2Countdown(next, { mini: true }); if (nextCd) wrap.appendChild(nextCd);
     var others = active.filter(function (t) { return t.id !== next.id; });
     if (others.length) {
       wrap.appendChild(el("div", "v2-kicker", "Your other trips"));
@@ -1125,7 +1213,8 @@
     var de = el("button", "v2-iconbtn danger"); de.type = "button"; de.setAttribute("aria-label", "Delete trip"); de.title = "Delete trip"; de.appendChild(gsvg(G.trash)); de.addEventListener("click", deleteTrip); ic.appendChild(de);
     h.appendChild(ic); wrap.appendChild(h);
     var tc = tripCounts(t);
-    wrap.appendChild(el("div", "v2-meta", (t.packedAt ? "✅ Packed " + fmtDate(t.packedAt) : cdText(t) + (t.travelDate ? " · " + fmtDate(t.travelDate) : "")) + (t.hidden ? " · 🙈 private" : "")));
+    if (t.packedAt || t.hidden) wrap.appendChild(el("div", "v2-meta", [t.packedAt ? "✅ Packed " + fmtDate(t.packedAt) : "", t.hidden ? "🙈 private" : ""].filter(Boolean).join(" · ")));
+    wrap.appendChild(v2Countdown(t, { onSet: setTravelDate, onClear: clearTravelDate, counts: tc }));
     if (sharePanel && sharePanel.tripId === t.id) wrap.appendChild(buildShareV2(t));
     // Progress: packed of (packed + to-go), labelled "% packed" — progress, not a readiness score.
     var pct = tc.need ? Math.round(tc.p / tc.need * 100) : 0;
@@ -1392,6 +1481,14 @@
   function guestSignIn() { guestMode = false; gform = null; expiredMsg = null; render(); }
 
   function gCounts(t) { var p = 0, n = 0; t.lists.forEach(function (l) { l.items.forEach(function (i) { if (i.state === "packed") { p++; n++; } else if (i.state === "todo") n++; }); }); return { packed: p, need: n, pct: n ? Math.round(p / n * 100) : 0 }; }
+  // Guest trips keep dates in start (and travelDate = start, which the countdown reads).
+  function gSetDate() {
+    var t = gTrip(); if (!t) return;
+    openModal({ title: "When are you travelling? 📅", text: "We'll count down the days for you.", inputType: "date", value: t.start || "", ok: "Save date" }, function (v) {
+      if (!parseDay(v)) return; t.start = v; t.travelDate = v; guestPersist(); renderGuest();
+    });
+  }
+  function gClearDate() { var t = gTrip(); if (!t) return; t.start = null; t.travelDate = null; guestPersist(); renderGuest(); }
 
   // Build a trip from a New-trip form (shared by guest and signed-in). Nothing is created until
   // the person taps Create — the chosen starter lists only, or one empty "Packing" list.
@@ -1581,6 +1678,7 @@
     var pr = el("div", "v2-progress"); pr.setAttribute("role", "progressbar"); pr.setAttribute("aria-valuemin", "0"); pr.setAttribute("aria-valuemax", String(c.need)); pr.setAttribute("aria-valuenow", String(c.packed)); pr.style.margin = "12px 0 4px"; var fi = el("i"); fi.style.width = c.pct + "%"; pr.appendChild(fi); card.appendChild(pr);
     card.addEventListener("click", function () { gOpenTrip(next); });
     wrap.appendChild(card);
+    var nextCd = v2Countdown(next, { mini: true }); if (nextCd) wrap.appendChild(nextCd);
     var ol = gOtherList(next);
     if (ol) wrap.appendChild(btn("v2-btn full", "Open " + ol.emoji + " " + ol.name, function () { gOpenList(next, ol.id); }));
 
@@ -1641,7 +1739,10 @@
     top.insertBefore(btnIcon(G.back, "Back", function () { gGo("home"); }), top.firstChild);
     wrap.appendChild(el("h1", "v2-h1", t.name));
     var c = gCounts(t);
-    var sub = el("div", "v2-meta"); sub.textContent = (t.start || "No dates yet") + " · " + c.packed + " of " + c.need + " packed"; wrap.appendChild(sub);
+    wrap.appendChild(v2Countdown(t, { onSet: gSetDate, onClear: gClearDate, counts: { t: c.need - c.packed } }));
+    var prow = el("div"); prow.style.cssText = "display:flex;justify-content:space-between;align-items:baseline;gap:10px";
+    prow.appendChild(el("span", "v2-sub", c.packed + " of " + c.need + " packed"));
+    prow.appendChild(el("span", "v2-pct", c.pct + "% packed")); wrap.appendChild(prow);
     var pr = el("div", "v2-progress"); pr.setAttribute("role", "progressbar"); pr.setAttribute("aria-valuemin", "0"); pr.setAttribute("aria-valuemax", String(c.need)); pr.setAttribute("aria-valuenow", String(c.packed)); var fi = el("i"); fi.style.width = c.pct + "%"; pr.appendChild(fi); wrap.appendChild(pr);
     // list tabs
     var tabs = el("div", "v2-listtabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Lists");
