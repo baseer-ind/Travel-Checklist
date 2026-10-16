@@ -618,11 +618,6 @@
       if (r.circle) api("POST", "/api/family/seen", {}).catch(function () { });
     }).catch(function (e) { if (e.status === 401) sessionExpired(); });
   }
-  function joinFamily() {
-    openModal({ title: "Connect with your family 👨‍👩‍👧", text: "Everyone who types the same family code is connected.", placeholder: "family code", ok: "Connect" }, function (code) {
-      api("POST", "/api/family/join", { code: code }).then(function (r) { family = r; unread = 0; flash = null; render(); }).catch(function (e) { flash = { error: errText(e) }; render(); });
-    });
-  }
   function leaveFamily() {
     confirmBox("Leave this family?", "You'll stop seeing each other's lists and activity. You can join again with the code.", "Leave", function () {
       api("POST", "/api/family/leave", {}).then(function (r) { family = r; render(); }).catch(function (e) { flash = { error: errText(e) }; render(); });
@@ -631,31 +626,127 @@
   function viewMember(m) {
     api("GET", "/api/family/" + encodeURIComponent(m.key)).then(function (r) { member = r; view = "member"; render(); }).catch(function (e) { flash = { error: errText(e) }; render(); });
   }
+  /* ---- v2 Together / Member (signed-in). The v1 sidebar is hidden by gShell; a
+     Back control returns to the trips app (Together) or to Together (Member). ---- */
+  var famErr = null, famReconnect = false;
+  var AVCOLORS = ["#0E7C66", "#B45309", "#6D28D9", "#D83A4E", "#1361D1"];
+  function initials(name) {
+    var s = String(name || "").trim(); if (!s) return "?";
+    var parts = s.split(/\s+/);
+    return (parts[0].charAt(0) + (parts[1] ? parts[1].charAt(0) : "")).toUpperCase();
+  }
+  function avatarColor(name) {
+    var s = String(name || ""), h = 0, i;
+    for (i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return AVCOLORS[h % AVCOLORS.length];
+  }
+  // Member-card headline: progress across the trips they share. "% packed" is literal
+  // progress (packed of packed+to-go), not a readiness score — skipped items don't count.
+  function famAgg(m) {
+    var p = 0, n = 0; (m.trips || []).forEach(function (t) { p += t.packed || 0; n += t.need || 0; });
+    return { p: p, n: n, pct: n ? Math.round(p / n * 100) : 0 };
+  }
+  function famConnect(code) {
+    code = String(code || "").trim();
+    if (!code) { famErr = "Enter your family's code."; return render(); }
+    api("POST", "/api/family/join", { code: code }).then(function (r) {
+      family = r; unread = 0; famErr = null; famReconnect = false; render();
+    }).catch(function (e) { famErr = errText(e); render(); });
+  }
   function renderFamily(main) {
-    main.appendChild(el("h1", "pagetitle", "👨‍👩‍👧 My family"));
-    showFlash(main);
-    if (!family) { main.appendChild(el("p", "sub", "Loading…")); return; }
-    if (!family.circle) {
-      var p = el("div", "panel"); p.appendChild(el("h2", null, "Connect with your family"));
-      p.appendChild(el("p", "sub", "Type your family's code and you'll be connected: you can see who is going where, what they've packed, and your family can see you."));
-      p.appendChild(btn("btn full", "Enter family code", joinFamily)); main.appendChild(p); return;
+    var wrap = gShell(false);
+    var top = gBrand(wrap, false);
+    top.insertBefore(btnIcon(G.back, "Back to trips", function () { famErr = null; famReconnect = false; go("app"); }), top.firstChild);
+    wrap.appendChild(el("h1", "v2-h1", "Together"));
+    if (!family) { wrap.appendChild(el("p", "v2-sub", "Loading…")); return; }
+    if (!family.circle || famReconnect) {
+      var c = el("div", "v2-card"); c.style.cssText = "display:flex;flex-direction:column;gap:12px";
+      c.appendChild(el("h2", "v2-h2", "Connect with your family"));
+      c.appendChild(el("p", "v2-sub", "Everyone who enters the same family code is connected: you'll see who's going where and what they've packed, and they'll see you. Your private items, lists and trips stay private."));
+      var f = el("label", "v2-field"); f.appendChild(el("span", null, "Family code"));
+      var inp = el("input", "v2-input"); inp.setAttribute("aria-label", "Family code"); inp.placeholder = "family code"; inp.autocomplete = "off"; if (famErr) inp.setAttribute("aria-invalid", "true");
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); famConnect(inp.value); } });
+      f.appendChild(inp); c.appendChild(f);
+      if (famErr) { var er = el("p", "v2-err", famErr); er.setAttribute("role", "alert"); c.appendChild(er); }
+      c.appendChild(btn("v2-btn full", "Connect", function () { famConnect(inp.value); }));
+      if (family.circle) c.appendChild(btn("v2-btn sec full", "Cancel", function () { famErr = null; famReconnect = false; render(); }));
+      wrap.appendChild(c); return;
     }
-    main.appendChild(el("p", "sub", family.circle.members + (family.circle.members === 1 ? " person is" : " people are") + " connected. Tap a name to see what they chose and ticked."));
-    if (family.unread) main.appendChild(el("div", "flash", "🔔 " + family.unread + " new thing" + (family.unread === 1 ? "" : "s") + " since you last looked"));
-    main.appendChild(el("h2", "dtrip", "People"));
+    var n = family.circle.members;
+    wrap.appendChild(el("p", "v2-sub", n + (n === 1 ? " person is" : " people are") + " connected. Tap a name to see what they chose and packed."));
+    if (family.unread) wrap.appendChild(el("p", "v2-meta", "🔔 " + family.unread + " new since you last looked"));
+    var people = el("div"); people.style.cssText = "display:flex;flex-direction:column;gap:10px";
     family.members.forEach(function (m) {
-      var c = el("div", "ucard"); c.setAttribute("data-member", m.key);
-      var h = el("div", "uhead"); h.appendChild(el("span", "uname", m.username)); if (m.you) h.appendChild(el("span", "badge", "you")); c.appendChild(h);
-      if (m.trips.length) m.trips.forEach(function (t) { c.appendChild(el("div", "umeta", "✈️ " + t.name + " · 📅 " + dayWords(t.travelDate) + " · " + t.packed + " of " + t.need + " packed" + (t.packedAt ? " ✅" : ""))); });
-      else c.appendChild(el("div", "umeta", "No trips shared yet"));
-      c.appendChild(el("div", "umeta", "Last active " + (m.lastSaved ? ago(m.lastSaved) : "never")));
-      var a = el("div", "uacts"); a.appendChild(btn("", "👀 See " + (m.you ? "my shared" : "their") + " lists", function () { viewMember(m); })); c.appendChild(a); main.appendChild(c);
+      var ag = famAgg(m);
+      var row = el("button", "v2-member"); row.type = "button"; row.setAttribute("data-member", m.key);
+      row.setAttribute("aria-label", "See " + (m.you ? "your shared lists" : m.username + "'s lists"));
+      var av = el("div", "v2-avatar", initials(m.username)); av.style.background = avatarColor(m.username); av.setAttribute("aria-hidden", "true");
+      row.appendChild(av);
+      var info = el("div", "mi");
+      var nm = el("b"); nm.appendChild(document.createTextNode(m.username)); if (m.you) nm.appendChild(el("span", "v2-you", "you")); info.appendChild(nm);
+      var sub = m.trips && m.trips.length ? (m.trips.length + (m.trips.length === 1 ? " trip" : " trips") + " · " + (m.lastSaved ? ago(m.lastSaved) : "no activity yet")) : "No trips shared yet";
+      info.appendChild(el("small", null, sub));
+      row.appendChild(info);
+      row.appendChild(el("span", "v2-pct", ag.n ? ag.pct + "% packed" : "—"));
+      row.addEventListener("click", function () { viewMember(m); });
+      people.appendChild(row);
     });
-    main.appendChild(el("h2", "dtrip", "Recent activity")); renderFeed(main, family.feed, "Nothing yet. When someone ticks or adds something, it shows up here.");
-    var tools = el("div", "list-tools"); tools.style.marginTop = "14px"; tools.appendChild(btn("link", "🔁 Use a different family code", joinFamily)); tools.appendChild(btn("link", "🚪 Leave family", leaveFamily)); main.appendChild(tools);
+    wrap.appendChild(people);
+    wrap.appendChild(el("h2", "v2-h2", "Recent activity"));
+    if (!family.feed || !family.feed.length) wrap.appendChild(el("p", "v2-sub", "Nothing yet. When someone packs or adds something, it shows up here."));
+    else {
+      var fd = el("div", "v2-feed");
+      family.feed.forEach(function (ev) { var r = el("div", "v2-feedrow"); r.appendChild(el("span", null, feedLine(ev))); r.appendChild(el("span", "when", ago(ev.t))); fd.appendChild(r); });
+      wrap.appendChild(fd);
+    }
+    var tools = el("div"); tools.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-top:4px";
+    tools.appendChild(btn("v2-btn sec", "Use a different code", function () { famErr = null; famReconnect = true; render(); }));
+    tools.appendChild(btn("v2-btn sec", "Leave family", leaveFamily));
+    wrap.appendChild(tools);
+  }
+  function roDot() {
+    var ns = "http://www.w3.org/2000/svg", s = document.createElementNS(ns, "svg");
+    s.setAttribute("width", 16); s.setAttribute("height", 16); s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", 2); s.setAttribute("aria-hidden", "true");
+    var c = document.createElementNS(ns, "circle"); c.setAttribute("cx", 12); c.setAttribute("cy", 12); c.setAttribute("r", 8); s.appendChild(c); return s;
+  }
+  function roItem(i) {
+    var st = i.state === "packed" ? "packed" : i.state === "skip" ? "skip" : "todo";
+    var row = el("div", "v2-roitem" + (st === "packed" ? " packed" : st === "skip" ? " skip" : ""));
+    var mark = el("span", "st");
+    if (st === "packed") mark.appendChild(gsvg(G.tick));
+    else if (st === "skip") mark.appendChild(gsvg(G.skip));
+    else mark.appendChild(roDot());
+    row.appendChild(mark);
+    row.appendChild(el("span", "nm", (i.emoji ? i.emoji + " " : "") + i.name));
+    return row;
   }
   function renderMember(main) {
-    renderReadOnly(main, { backText: "← Back to family", onBack: function () { view = "family"; member = null; render(); loadFamily(); }, username: member.username, you: member.you, data: member.data, updatedAt: member.updatedAt });
+    var wrap = gShell(false);
+    var top = gBrand(wrap, false);
+    top.insertBefore(btnIcon(G.back, "Back to Together", function () { view = "family"; member = null; render(); loadFamily(); }), top.firstChild);
+    wrap.appendChild(el("h1", "v2-h1", member.you ? "Your shared lists" : member.username + "’s lists"));
+    wrap.appendChild(el("p", "v2-sub", "View only" + (member.updatedAt ? " · updated " + fmtDateTime(member.updatedAt) : "") + ". Private items stay hidden."));
+    var trips = (member.data && member.data.trips) || [];
+    if (!trips.length) { wrap.appendChild(el("p", "v2-sub", (member.you ? "You haven’t" : "They haven’t") + " shared any trips yet.")); return; }
+    trips.forEach(function (t) {
+      var card = el("div", "v2-card"); card.style.cssText = "display:flex;flex-direction:column;gap:10px";
+      var h = el("div"); h.style.cssText = "display:flex;align-items:baseline;justify-content:space-between;gap:10px";
+      var left = el("div"); left.appendChild(el("div", "v2-h2", "✈️ " + t.name));
+      if (t.travelDate) left.appendChild(el("div", "v2-meta", "📅 " + dayWords(t.travelDate)));
+      h.appendChild(left);
+      var p = 0, n = 0; (t.lists || []).forEach(function (l) { (l.items || []).forEach(function (i) { if (i.state === "packed") { p++; n++; } else if (i.state !== "skip") n++; }); });
+      h.appendChild(el("span", "v2-pct", n ? Math.round(p / n * 100) + "% packed" : "—"));
+      card.appendChild(h);
+      (t.lists || []).forEach(function (l) {
+        card.appendChild(el("div", "v2-kicker", (l.emoji ? l.emoji + " " : "") + l.name));
+        var box = el("div", "v2-ro");
+        if (!l.items || !l.items.length) { var e = el("div", "v2-roitem"); e.appendChild(el("span", "st")); e.appendChild(el("span", "nm", "Nothing shared here")); box.appendChild(e); }
+        else l.items.forEach(function (i) { box.appendChild(roItem(i)); });
+        card.appendChild(box);
+      });
+      wrap.appendChild(card);
+    });
   }
   function pollUnread() {
     if (!user || document.hidden) return;

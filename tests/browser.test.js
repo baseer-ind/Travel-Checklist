@@ -396,6 +396,108 @@ async function a11y(page, label) {
     await mate.close(); await ctx.close();
   });
 
+  // Shared v2 frame on desktop: content centred (not left-pinned), tab bar under the frame, no h-scroll.
+  await test("desktop shell: content centred and tab bar under the frame at 768px and 1280px", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await pg.getByLabel("Trip name").fill("Oslo trip");
+    await pg.getByRole("radio", { name: /Solo — domestic/ }).click();
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.locator("#main h1", { hasText: "Oslo trip" }).first().waitFor({ timeout: 8000 });
+    await pg.getByLabel("Main").getByRole("button", { name: "Home" }).click();
+    await pg.getByText("Next up").waitFor({ timeout: 8000 });
+
+    const geom = async () => pg.evaluate(() => {
+      const w = document.querySelector(".v2-wrap").getBoundingClientRect();
+      const tb = document.querySelector(".v2-tabbar").getBoundingClientRect();
+      return {
+        iw: window.innerWidth,
+        wrap: { left: w.left, right: w.right, width: w.width },
+        tab: { left: tb.left, right: tb.right },
+        hscroll: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+    for (const width of [1280, 768]) {
+      await pg.setViewportSize({ width, height: 800 });
+      await pg.waitForTimeout(80);
+      const g = await geom();
+      assert.ok(g.hscroll <= 1, `@${width}px no h-scroll (overflow ${g.hscroll})`);
+      // centred: left gutter ~= right gutter, and not pinned to the left edge
+      const leftGutter = g.wrap.left, rightGutter = g.iw - g.wrap.right;
+      assert.ok(Math.abs(leftGutter - rightGutter) <= 2, `@${width}px content centred (gutters ${leftGutter} vs ${rightGutter})`);
+      assert.ok(leftGutter > 40, `@${width}px content not left-pinned (left gutter ${leftGutter})`);
+      assert.ok(g.wrap.width <= 561, `@${width}px frame capped at its max-width (${g.wrap.width})`);
+      // tab bar sits under the same frame column
+      assert.ok(Math.abs(g.tab.left - g.wrap.left) <= 2 && Math.abs(g.tab.right - g.wrap.right) <= 2, `@${width}px tab bar aligned to frame (tab ${g.tab.left}-${g.tab.right}, frame ${g.wrap.left}-${g.wrap.right})`);
+    }
+    await ctx.close();
+  });
+
+  // Signed-in v2 Together + Member: member cards show "% packed", opening a member is read-only, private items stay hidden.
+  await test("signed-in Together/Member: % packed, read-only lists, private items hidden", async () => {
+    // Omar: an account in the family with a shared item (packed) and a private item.
+    const O = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const o = await O.newPage();
+    await o.goto(base + "/", { waitUntil: "networkidle" });
+    await o.getByRole("button", { name: "Sign in" }).click();
+    await o.getByRole("tab", { name: "Create account" }).click();
+    await o.locator("#aName").fill("Omar"); await o.locator("#aPass").fill("secret1"); await o.locator("#aCode").fill("family");
+    await o.getByRole("button", { name: "Create my account" }).click();
+    await o.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await o.getByLabel("New item").fill("Beach towel");
+    await o.getByRole("button", { name: "Add ➕" }).click();
+    await o.getByText("Beach towel").waitFor();
+    await o.getByRole("button", { name: "Packed: Beach towel" }).click();   // pack the shared item
+    await o.getByLabel("New item").fill("OmarSecret");
+    await o.getByRole("button", { name: "Add ➕" }).click();
+    await o.getByText("OmarSecret").waitFor();
+    await o.getByRole("button", { name: "Shared with family: OmarSecret" }).click();   // toggle to private
+    await o.getByText("✓ Saved").waitFor({ timeout: 10000 });
+
+    // Nadia: a second account in the same family; packs one item so her own card shows progress.
+    const N = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const n = await N.newPage();
+    await n.goto(base + "/", { waitUntil: "networkidle" });
+    await n.getByRole("button", { name: "Sign in" }).click();
+    await n.getByRole("tab", { name: "Create account" }).click();
+    await n.locator("#aName").fill("Nadia"); await n.locator("#aPass").fill("secret2"); await n.locator("#aCode").fill("family");
+    await n.getByRole("button", { name: "Create my account" }).click();
+    await n.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await n.getByLabel("New item").fill("Sunhat");
+    await n.getByRole("button", { name: "Add ➕" }).click();
+    await n.getByText("Sunhat").waitFor();
+    await n.getByRole("button", { name: "Packed: Sunhat" }).click();
+    await n.getByText("✓ Saved").waitFor({ timeout: 10000 });
+
+    // Nadia opens Together (v2): sidebar drawer → Family.
+    await n.getByRole("button", { name: "☰ Trips" }).click();
+    await n.getByRole("button", { name: /Family/ }).click();
+    await n.getByRole("heading", { name: "Together" }).waitFor({ timeout: 8000 });
+
+    // two members, each card carries a "% packed" figure (progress, not a readiness score)
+    assert.ok(await n.locator(".v2-member").count() >= 2, "both family members are listed");
+    const you = n.locator(".v2-member", { hasText: "Nadia" });
+    assert.ok(await you.locator(".v2-you").count() === 1, "own card has the 'you' badge");
+    const pcts = await n.locator(".v2-member .v2-pct").allTextContents();
+    assert.ok(pcts.some((t) => /\d+% packed/.test(t)), "a member card shows '% packed': " + JSON.stringify(pcts));
+    assert.equal((await n.locator(".v2-member .v2-pct").allTextContents()).join("|").includes("ready"), false, "never labelled 'ready'");
+    await a11y(n, "Together (375px)");
+
+    // open Omar's member view → read-only lists, shared item visible, private item hidden
+    await n.getByRole("button", { name: "See Omar's lists" }).click();
+    await n.getByRole("heading", { name: "Omar’s lists" }).waitFor({ timeout: 8000 });
+    await n.locator(".v2-roitem", { hasText: "Beach towel" }).first().waitFor({ timeout: 8000 });
+    assert.equal(await n.getByText("OmarSecret").count(), 0, "private item is hidden from the family member view");
+    assert.ok(await n.locator(".v2-pct", { hasText: "% packed" }).count() >= 1, "member trip shows '% packed'");
+    // read-only: no packing controls on this screen
+    assert.equal(await n.getByRole("button", { name: /^Packed:/ }).count(), 0, "member view has no packing buttons (read-only)");
+
+    await a11y(n, "Member (375px)");
+    await O.close(); await N.close();
+  });
+
   await browser.close();
   await new Promise((r) => server.close(r));
   console.log("\n" + passed + " passed, " + failed + " failed");
