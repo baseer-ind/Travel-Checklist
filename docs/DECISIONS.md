@@ -203,3 +203,19 @@ The signed-in "Plan a trip" is now the v2 New-trip screen (a new `appView` value
 **Tests.** The signed-in `createTrip` browser helper now drives the v2 screen (name + optional profile → Create) instead of the modal. Added a test: a signed-in user opens New-trip, **nothing is created just by opening it**, picking a profile adds its ready-made lists, Create lands on the Trip, and the screen holds the a11y floor at 320px.
 
 `npm test`: 36. `npm run test:browser`: 15.
+
+## 2026-10-16 — Service-worker cache staleness (guest screens shipped looking pink on the live site)
+
+**Symptom.** After the PR #10 palette/frame fix merged and deployed, the live site still showed the guest screens (Welcome, Home, Trip, Together) in the old v1 pink, left-pinned on desktop — while a fresh browser and the browser tests showed the correct Design_1 look.
+
+**Root cause — not the code.** The guest screens already set `body.className = "v2"` (via `gShell`) and render correctly in the current code (proven by a new test and a direct DOM check: body background `#EFEAE1` canvas, `.v2-wrap` centred, no h-scroll at 1280/768px). The fault was the **service worker**: `sw.js` is **cache-first** for the shell, with a **static cache name** and **unchanging asset URLs** (`/app.js?v=1`, `/style.css?v=1`, …). When PRs #5–#11 changed those assets, the cache name was not bumped, so **returning users kept being served the old cached pink `app.js`/CSS** forever; only first-time visitors (and tests) got the new files.
+
+**Fix — two parts.**
+1. *Bust the current stale cache:* bump `CACHE` `baggo-shell-v5` → `v6`. The new SW (a byte change) installs, re-precaches the shell and, on activate, deletes the old cache; the update flow swaps it in (SKIP_WAITING → `controllerchange` → reload). This frees returning users from the old pink bundle once.
+2. *Stop it recurring:* switch the shell fetch handler from **cache-first to network-first**. Same-origin shell requests now go to the network first (subresources with `cache:"no-cache"` to force revalidation even behind an immutable CDN header; navigations re-fetch plainly, their HTML already `no-cache`), and every ok response is re-cached as the offline copy. So a returning visitor online always gets the current `app.js`/CSS **with no cache-name bump**, and offline still serves the precached shell. `CACHE` now only needs bumping when the SHELL list or the SW logic itself changes. The update-toast flow is unchanged (it fires on `sw.js` changes).
+
+**Guards.** Two browser tests: (1) the **guest Welcome** screen is centred on the canvas (not `#fdf8fb` pink) at 768px and 1280px — the earlier centring test only exercised a post-sign-in guest screen, so an entry-screen regression wasn't caught; (2) **network-first** — after a visitor's SW is installed, a shell asset (`tokens.css`) is changed on the server with no `sw.js`/cache-name change, and the returning visitor's next online load reflects it (the cache name is asserted unchanged), while offline still boots.
+
+**Not changed: the v1 sign-in and shared-list screens.** `renderAuth` and `renderSharedGuest` set `body.className = "guest"` and are still the v1 (pink) screens. Flipping them to `"guest v2"` was considered and rejected: their CSS uses v1-only tokens (`--card`, `--peach`, `--lavender`, `--sky`) defined only under `body:not(.v2)`, so under `.v2` the sign-in card and its primary button lose their backgrounds (verified by screenshot). Those two screens need a proper v2 rebuild, not a class flip; they stay v1 until then.
+
+`npm test`: 36. `npm run test:browser`: 16.
