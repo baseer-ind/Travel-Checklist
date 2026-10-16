@@ -135,7 +135,7 @@ Before building more v2 screens: touch targets and the text floor are driven by 
 - A bottom tab bar (Home · Trips) carries the IA; Together stays hidden for guests (no code yet).
 - Verified by a browser test: Home next-trip card, duplicate resets states, archive hides from Home and is reopenable.
 
-### Known issue to verify on real devices
-On a first-ever visit, the service worker installs and `clients.claim()`s the already-open page; in headless Chromium this triggers one page reload, which (for a guest mid-task) lands them on Home. The `activate`/update path and my reload-on-update code are not the cause (the update guard never fires here). The guest Journey-1 test blocks the service worker to isolate the flow; offline **reload** is still covered by the local-first and SW-update tests. This one-time first-visit reload should be checked on real iOS/Android Chrome before launch and, if it reproduces, mitigated (e.g., register the worker after first paint / defer claim).
+### First-run reload — fixed (2026-10-16)
+A first-ever visit used to reload once right after the SW installed, because `activate` called `self.clients.claim()` and taking over a page that loaded without a controller makes the browser reload it — landing a guest mid-create on Home. Fixed by **removing `clients.claim()`** from `sw.js` (old-cache cleanup kept): the worker now controls the next navigation instead, so there is no mid-task reload. Updates are unaffected — `registerSW` drives them via SKIP_WAITING + `controllerchange` once the page is controlled. The Journey-1 browser test runs with the SW **enabled** and asserts exactly one navigation (the initial load) through create-and-tick; the SW-update test establishes the controller with one reload before shipping v2.
 
 `npm test`: 36. `npm run test:browser`: 9.
