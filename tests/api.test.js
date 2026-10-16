@@ -83,6 +83,18 @@ const sampleTrip = (name) => ({ next: 10, curTrip: 1, curList: 2, trips: [{ id: 
   });
   await test("logout clears session", async () => { await bilal("POST", "/api/logout", {}); assert.equal((await bilal("GET", "/api/data")).status, 401); });
   await test("static files and PWA assets are served", async () => { for (const p of ["/", "/style.css", "/app.js", "/sw.js", "/manifest.webmanifest", "/icons/icon-192.png"]) { const r = await fetch(base + p); assert.equal(r.status, 200, p); } assert.equal((await fetch(base + "/../package.json")).status, 404); });
+  await test("self-service delete removes the account + data; admin can't self-delete", async () => {
+    const c = client();
+    assert.equal((await c("POST", "/api/signup", { username: "Deleteme", password: "secret5", code: "family" })).status, 201);
+    assert.equal((await c("PUT", "/api/data", { data: sampleTrip("Delete trip") })).status, 200);
+    assert.equal((await c("DELETE", "/api/account")).status, 200);
+    // account is gone: the cleared session can't read data, and the credentials no longer log in
+    assert.equal((await c("GET", "/api/data")).status, 401);
+    assert.equal((await client()("POST", "/api/login", { username: "deleteme", password: "secret5" })).status, 401);
+    // the config-based admin account can't be self-deleted here
+    assert.equal((await admin("DELETE", "/api/account")).status, 400);
+  });
+
   await test("data survives a server restart", async () => { await new Promise((r) => server.close(r)); await new Promise((r) => setTimeout(r, 150)); server = createServer(env); await new Promise((r) => server.listen(0, r)); base = "http://127.0.0.1:" + server.address().port; const c = client(); assert.equal((await c("POST", "/api/login", { username: "Amina", password: "secret9" })).status, 200); const d = await c("GET", "/api/data"); assert.equal(d.body.data.trips[0].name, "Trip to Tokyo"); });
 
   server.close();
