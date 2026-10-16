@@ -2,13 +2,6 @@
   "use strict";
 
   /* ================= templates ================= */
-  var STARTER = [
-    ["Documents", "🛂", [["🛂", "Passport / ID"], ["🎟️", "Tickets & bookings"], ["💳", "Wallet & cards"], ["💵", "Cash / local currency"]]],
-    ["Clothing", "👕", [["👕", "Clothes"], ["🩲", "Underwear & socks"], ["👟", "Comfortable shoes"]]],
-    ["Gadgets", "📱", [["📱", "Phone"], ["🔌", "Charger & power bank"], ["🎧", "Headphones"], ["📸", "Camera"]]],
-    ["Toiletries", "🧴", [["🪥", "Toothbrush & toothpaste"], ["🧴", "Toiletries"], ["🧴", "Sunscreen"], ["💊", "Medicines"]]],
-    ["Other", "🎒", [["🕶️", "Sunglasses"], ["🎒", "Day bag"], ["💧", "Water bottle"]]]
-  ];
   var ITEM_EMOJI = [
     [/passport|visa|\bid\b/i, "🛂"], [/ticket|booking|boarding/i, "🎟️"], [/card|wallet/i, "💳"], [/cash|money|currency/i, "💵"],
     [/phone|mobile/i, "📱"], [/charger|cable|power/i, "🔌"], [/headphone|earbud|airpod/i, "🎧"], [/shirt|cloth|jacket|dress|pant|jean|sweater|coat/i, "👕"],
@@ -39,7 +32,8 @@
   var cfg = { signupEnabled: false };
   var rev = 0, dirty = false, saving = false, saveTimer = null, retryMs = 0, saveState = "saved";
   var view = "app";           // app | account | admin | adminuser | mustchange
-  var appView = "home";       // within view==="app" (signed-in v2): home | trip
+  var appView = "home";       // within view==="app" (signed-in v2): home | trip | new
+  var ntForm = null;          // signed-in New-trip form state
   var offlineBoot = false;    // true when the app was booted from local cache with no network
   var adminGroups = null, adminUsers = null, adminDetail = null, flash = null, lastKey = null, expiredMsg = null;
   var authMode = "login";
@@ -74,12 +68,6 @@
   function mkItem(e, n) { return { id: nid(), emoji: e, name: n, state: "todo" }; }
   function mkList(name, emoji, items, kind) { var l = { id: nid(), name: name, emoji: emoji, items: (items || []).map(function (i) { return mkItem(i[0], i[1]); }) }; if (kind) l.kind = kind; return l; }
   function mkLeaveList() { return mkList("Before you leave", "🔑", LEAVE_TASKS, "leave"); }
-  function mkTrip(name, tpl) {
-    var src = tpl === "starter" ? STARTER : null;
-    var lists = src ? src.map(function (s) { return mkList(s[0], s[1], s[2]); }) : [mkList("Essentials", "📋", [])];
-    lists.push(mkLeaveList());
-    return { id: nid(), name: name, created: Date.now(), packedAt: null, travelDate: null, lists: lists };
-  }
   function emptyState() { return { next: 1, trips: [], curTrip: null, curList: null }; }
   function normalize(d) {
     d = d && d.trips ? d : emptyState();
@@ -210,12 +198,6 @@
   function msgClear() { var m = $("msg"); if (m) { m.className = "msg"; m.innerHTML = ""; } }
   function go(v) { view = v; flash = null; closeSide(); render(); }
   function appGo(sub) { view = "app"; appView = sub; flash = null; closeSide(); closeAppMenu(); render(); }
-  function newTrip() {
-    openModal({ title: "Name your trip ✈️", text: "For example: Trip to America", placeholder: "Trip to…", ok: "Create trip",
-      select: [["empty", "Start with an empty checklist"], ["starter", "Use the starter checklists"]] }, function (name, tpl) {
-      var t = mkTrip(name, tpl); S.trips.push(t); S.curTrip = t.id; S.curList = t.lists[0].id; view = "app"; appView = "trip"; msgClear(); touch(); render(); closeSide();
-    });
-  }
   function newList() {
     var t = trip(); if (!t) return;
     openModal({ title: "New checklist 📋", text: "For example: Clothing, Gadgets, Documents", placeholder: "Checklist name", ok: "Add checklist" }, function (name) {
@@ -1028,8 +1010,11 @@
   }
   function renderMain() {
     if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
-    // The signed-in app (Home + Trip) is v2: it builds its own shell (no v1 topbar/sidebar).
-    if (view === "app") return (appView === "trip" && trip()) ? renderTripV2() : renderHomeV2();
+    // The signed-in app (Home + Trip + New-trip) is v2: it builds its own shell (no v1 topbar/sidebar).
+    if (view === "app") {
+      if (appView === "new" && ntForm) return renderNewTripV2();
+      return (appView === "trip" && trip()) ? renderTripV2() : renderHomeV2();
+    }
     var main = $("main"); main.innerHTML = "";
     var top = el("div", "topbar"); top.appendChild(btn("menu", "☰ Trips", openSide));
     var bell = btn("bell", "🔔 0", openBell); bell.id = "bell"; bell.hidden = true; top.appendChild(bell); updateBell();
@@ -1070,7 +1055,7 @@
       var em = el("div", "v2-empty"); em.style.paddingTop = "8px";
       em.appendChild(el("h2", "v2-h2", "Where to next?"));
       em.appendChild(el("p", "v2-sub", "You have no trips yet. Plan one and add checklists like Documents, Clothing or Gadgets — nothing is added until you do."));
-      em.appendChild(btn("v2-btn full", "Plan a trip", newTrip));
+      em.appendChild(btn("v2-btn full", "Plan a trip", newTripV2));
       wrap.appendChild(em); return;
     }
     var next = nextTripV2(active), c = tripCounts(next), days = daysUntil(next);
@@ -1092,7 +1077,7 @@
       wrap.appendChild(el("div", "v2-kicker", "Your other trips"));
       others.forEach(function (t) { wrap.appendChild(tripCardV2(t, tripCounts(t), false)); });
     }
-    wrap.appendChild(btn("v2-btn sec full", "Plan another trip", newTrip));
+    wrap.appendChild(btn("v2-btn sec full", "Plan another trip", newTripV2));
   }
   // Soonest upcoming, then undated, then past; most recently created breaks ties (matches guest Home).
   function nextTripV2(active) {
@@ -1109,6 +1094,23 @@
     if (big) { var pr = el("div", "v2-progress"); pr.setAttribute("role", "progressbar"); pr.setAttribute("aria-valuemin", "0"); pr.setAttribute("aria-valuemax", String(c.need)); pr.setAttribute("aria-valuenow", String(c.p)); pr.style.margin = "12px 0 2px"; var fi = document.createElement("i"); fi.style.width = (c.need ? Math.round(c.p / c.need * 100) : 0) + "%"; pr.appendChild(fi); card.appendChild(pr); }
     card.addEventListener("click", function () { selectTrip(t.id); });
     return card;
+  }
+  // Signed-in New-trip: the v2 three-field flow (name, dates, who's going → ready-made lists),
+  // replacing the v1 modal. Nothing is created until Create — no auto-create.
+  function newTripV2() { ntForm = { name: "", start: "", end: "", noDates: false, profile: null, pick: {}, err: "" }; appView = "new"; closeAppMenu(); render(); }
+  function renderNewTripV2() {
+    var f = ntForm; var wrap = gShell(false);
+    appHeader(wrap, function () { ntForm = null; appGo("home"); });
+    wrap.appendChild(el("h1", "v2-h1", "Plan a trip"));
+    tripFormFields(wrap, f, renderNewTripV2);
+    wrap.appendChild(btn("v2-btn full", "Create trip", ntCreate));
+  }
+  function ntCreate() {
+    var f = ntForm; if (!f) return;
+    if (!f.name.trim()) { f.err = "Give your trip a name."; return render(); }
+    var trip = buildTripFromForm(f);
+    S.trips.push(trip); S.curTrip = trip.id; S.curList = trip.lists[0].id;
+    ntForm = null; appView = "trip"; msgClear(); touch(); render();
   }
   function renderTripV2() {
     var t = trip(); var wrap = gShell(false);
@@ -1287,7 +1289,7 @@
     if (!S) { $("main").innerHTML = '<p class="sub loading">Loading…</p>'; return; }
     renderSide(); renderMain();
   }
-  $("newTripBtn").addEventListener("click", newTrip);
+  $("newTripBtn").addEventListener("click", newTripV2);
 
   /* ================= boot ================= */
   api("GET", "/api/me").then(function (r) {
@@ -1391,17 +1393,62 @@
 
   function gCounts(t) { var p = 0, n = 0; t.lists.forEach(function (l) { l.items.forEach(function (i) { if (i.state === "packed") { p++; n++; } else if (i.state === "todo") n++; }); }); return { packed: p, need: n, pct: n ? Math.round(p / n * 100) : 0 }; }
 
-  function gCreateTrip() {
-    var f = gform;
-    if (!f.name.trim()) { f.err = "Give your trip a name."; return renderGuest(); }
+  // Build a trip from a New-trip form (shared by guest and signed-in). Nothing is created until
+  // the person taps Create — the chosen starter lists only, or one empty "Packing" list.
+  function buildTripFromForm(f) {
     var src = f.profile ? STARTERS[f.profile] : UNIVERSAL;
     var lists = src.filter(function (t) { return f.pick[t[0]] !== false; }).map(function (t) {
       return { id: nid(), name: t[0], emoji: t[1], kind: t[2], items: t[3].map(function (it) { var o = { id: nid(), emoji: it[0], name: it[1], state: "todo" }; if (it[2]) o.qty = it[2]; if (it[3]) o.mnf = true; return o; }) };
     });
     if (!lists.length) lists = [{ id: nid(), name: "Packing", emoji: "🎒", kind: "packing", items: [] }];
     var start = f.noDates ? null : (f.start || null);
-    var trip = { id: nid(), name: f.name.trim(), created: Date.now(), packedAt: null, start: start, end: f.noDates ? null : (f.end || null), travelDate: start, profile: f.profile || null, lists: lists };
-    S.trips.push(trip); S.curTrip = trip.id; S.curList = lists[0].id; gform = null; gcat = "all";
+    return { id: nid(), name: f.name.trim(), created: Date.now(), packedAt: null, start: start, end: f.noDates ? null : (f.end || null), travelDate: start, profile: f.profile || null, lists: lists };
+  }
+  // The three New-trip fields (name, dates, who's going → starter lists) rendered into a wrap.
+  // `rerender` redraws the screen after a toggle; the caller adds its own header and Create button.
+  function tripFormFields(wrap, f, rerender) {
+    var nameF = el("label", "v2-field"); nameF.appendChild(el("span", null, "Trip name"));
+    var nameI = el("input", "v2-input"); nameI.id = "ntName"; nameI.value = f.name; nameI.placeholder = "e.g. Weekend in Lisbon"; nameI.setAttribute("aria-label", "Trip name"); if (f.err) nameI.setAttribute("aria-invalid", "true");
+    nameI.addEventListener("input", function () { f.name = nameI.value; f.err = ""; });
+    nameF.appendChild(nameI); wrap.appendChild(nameF);
+    if (f.err) { var e = el("p", "v2-err", f.err); e.setAttribute("role", "alert"); wrap.appendChild(e); }
+    var datesF = el("div", "v2-field"); datesF.appendChild(el("span", null, "When?"));
+    var grid = el("div", "v2-dates");
+    var ds = el("input", "v2-input date"); ds.type = "date"; ds.value = f.start; ds.disabled = f.noDates; ds.setAttribute("aria-label", "Departure date"); ds.addEventListener("change", function () { f.start = ds.value; });
+    var de = el("input", "v2-input date"); de.type = "date"; de.value = f.end; de.disabled = f.noDates; de.setAttribute("aria-label", "Return date"); de.addEventListener("change", function () { f.end = de.value; });
+    grid.appendChild(ds); grid.appendChild(de); datesF.appendChild(grid);
+    var nd = el("label", "v2-checkline"); var ndi = document.createElement("input"); ndi.type = "checkbox"; ndi.checked = f.noDates; ndi.addEventListener("change", function () { f.noDates = ndi.checked; rerender(); }); nd.appendChild(ndi); nd.appendChild(document.createTextNode("I don't know my dates yet")); datesF.appendChild(nd);
+    wrap.appendChild(datesF);
+    var who = el("div", "v2-field"); who.appendChild(el("span", null, "Who's going?"));
+    var choices = el("div", "v2-choices"); choices.setAttribute("role", "radiogroup"); choices.setAttribute("aria-label", "Who's going");
+    PROFILES.forEach(function (p) {
+      var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.profile === p[0] ? "true" : "false");
+      var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
+      var ct = el("span", "ct"); ct.appendChild(el("b", null, p[1])); ct.appendChild(el("small", null, p[2])); b.appendChild(ct);
+      b.addEventListener("click", function () { f.profile = p[0]; f.pick = {}; rerender(); });
+      choices.appendChild(b);
+    });
+    who.appendChild(choices); wrap.appendChild(who);
+    var src = f.profile ? STARTERS[f.profile] : UNIVERSAL;
+    var sl = el("div", "v2-field");
+    sl.appendChild(el("span", null, f.profile ? "Starter lists" : "We'll add three basics"));
+    sl.appendChild(el("p", "v2-sub", "Tick what to add — nothing is added without you."));
+    var box = el("div"); box.style.cssText = "display:flex;flex-direction:column;gap:8px";
+    src.forEach(function (t) {
+      var on = f.pick[t[0]] !== false;
+      var b = el("button", "v2-starter"); b.type = "button"; b.setAttribute("role", "checkbox"); b.setAttribute("aria-checked", on ? "true" : "false");
+      var bx = el("span", "box"); if (on) bx.appendChild(gsvg(G.tick, 3)); b.appendChild(bx);
+      var st = el("span", "st"); st.appendChild(el("b", null, t[1] + "  " + t[0])); st.appendChild(el("small", null, t[3].length + " items")); b.appendChild(st);
+      b.addEventListener("click", function () { f.pick[t[0]] = (f.pick[t[0]] === false); rerender(); });
+      box.appendChild(b);
+    });
+    sl.appendChild(box); wrap.appendChild(sl);
+  }
+  function gCreateTrip() {
+    var f = gform;
+    if (!f.name.trim()) { f.err = "Give your trip a name."; return renderGuest(); }
+    var trip = buildTripFromForm(f);
+    S.trips.push(trip); S.curTrip = trip.id; S.curList = trip.lists[0].id; gform = null; gcat = "all";
     guestPersist(); gGo("trip");
     toast("Trip created on this device.");
   }
@@ -1496,46 +1543,7 @@
     var f = gform; var wrap = gShell(false);
     var top = gBrand(wrap, false); top.insertBefore(btnIcon(G.back, "Back", function () { gform = null; gGo(S.trips.length ? "home" : "welcome"); }), top.firstChild);
     wrap.appendChild(el("h1", "v2-h1", "Plan a trip"));
-    // name
-    var nameF = el("label", "v2-field"); nameF.appendChild(el("span", null, "Trip name"));
-    var nameI = el("input", "v2-input"); nameI.value = f.name; nameI.placeholder = "e.g. Weekend in Lisbon"; nameI.setAttribute("aria-label", "Trip name"); if (f.err) nameI.setAttribute("aria-invalid", "true");
-    nameI.addEventListener("input", function () { f.name = nameI.value; f.err = ""; });
-    nameF.appendChild(nameI); wrap.appendChild(nameF);
-    if (f.err) { var e = el("p", "v2-err", f.err); e.setAttribute("role", "alert"); wrap.appendChild(e); }
-    // dates
-    var datesF = el("div", "v2-field"); datesF.appendChild(el("span", null, "When?"));
-    var grid = el("div", "v2-dates");
-    var ds = el("input", "v2-input date"); ds.type = "date"; ds.value = f.start; ds.disabled = f.noDates; ds.setAttribute("aria-label", "Departure date"); ds.addEventListener("change", function () { f.start = ds.value; });
-    var de = el("input", "v2-input date"); de.type = "date"; de.value = f.end; de.disabled = f.noDates; de.setAttribute("aria-label", "Return date"); de.addEventListener("change", function () { f.end = de.value; });
-    grid.appendChild(ds); grid.appendChild(de); datesF.appendChild(grid);
-    var nd = el("label", "v2-checkline"); var ndi = document.createElement("input"); ndi.type = "checkbox"; ndi.checked = f.noDates; ndi.addEventListener("change", function () { f.noDates = ndi.checked; renderGNew(); }); nd.appendChild(ndi); nd.appendChild(document.createTextNode("I don't know my dates yet")); datesF.appendChild(nd);
-    wrap.appendChild(datesF);
-    // profile
-    var who = el("div", "v2-field"); who.appendChild(el("span", null, "Who's going?"));
-    var choices = el("div", "v2-choices"); choices.setAttribute("role", "radiogroup"); choices.setAttribute("aria-label", "Who's going");
-    PROFILES.forEach(function (p) {
-      var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.profile === p[0] ? "true" : "false");
-      var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
-      var ct = el("span", "ct"); ct.appendChild(el("b", null, p[1])); ct.appendChild(el("small", null, p[2])); b.appendChild(ct);
-      b.addEventListener("click", function () { f.profile = p[0]; f.pick = {}; renderGNew(); });
-      choices.appendChild(b);
-    });
-    who.appendChild(choices); wrap.appendChild(who);
-    // starter lists for the chosen profile (pre-selected; tap to drop)
-    var src = f.profile ? STARTERS[f.profile] : UNIVERSAL;
-    var sl = el("div", "v2-field");
-    sl.appendChild(el("span", null, f.profile ? "Starter lists" : "We'll add three basics"));
-    sl.appendChild(el("p", "v2-sub", "Tick what to add — nothing is added without you."));
-    var box = el("div"); box.style.cssText = "display:flex;flex-direction:column;gap:8px";
-    src.forEach(function (t) {
-      var on = f.pick[t[0]] !== false;
-      var b = el("button", "v2-starter"); b.type = "button"; b.setAttribute("role", "checkbox"); b.setAttribute("aria-checked", on ? "true" : "false");
-      var bx = el("span", "box"); if (on) bx.appendChild(gsvg(G.tick, 3)); b.appendChild(bx);
-      var st = el("span", "st"); st.appendChild(el("b", null, t[1] + "  " + t[0])); st.appendChild(el("small", null, t[3].length + " items")); b.appendChild(st);
-      b.addEventListener("click", function () { f.pick[t[0]] = (f.pick[t[0]] === false); renderGNew(); });
-      box.appendChild(b);
-    });
-    sl.appendChild(box); wrap.appendChild(sl);
+    tripFormFields(wrap, f, renderGNew);
     wrap.appendChild(btn("v2-btn full", "Create trip", gCreateTrip));
   }
   function gOpenTrip(t) { S.curTrip = t.id; gFix(); gcat = "all"; guestPersist(); gGo("trip"); }
