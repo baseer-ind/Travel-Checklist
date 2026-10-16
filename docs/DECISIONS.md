@@ -174,7 +174,7 @@ The signed-in experience is still v1 (visual split during the build, to be remov
 
 `npm test`: 36. `npm run test:browser`: 12.
 
-## 2026-10-16 — Signed-in v2 Home + Trip; Qadian removed
+## 2026-10-16 — Signed-in v2 Home + Trip; hard-coded packing list removed
 
 **Signed-in Home + Trip rebuilt in v2.** `view === "app"` now renders the v2 Home or Trip (a new `appView` sub-state: `home` | `trip`) on the shared centred frame, replacing the v1 welcome/trip rendering (that dead code was deleted).
 - **Home** is the signed-in hub: an empty state for a new account ("Where to next?"), else the next-trip card (soonest upcoming → undated → past), departure-day surfacing on the travel day / day before, the other trips, and "Plan a trip" (still the v1 New-trip modal for now — that screen converts later).
@@ -183,7 +183,7 @@ The signed-in experience is still v1 (visual split during the build, to be remov
 
 **"% ready" → "% packed" applied on the Trip screen.** The v2 Trip shows "X of Y packed" with a **"Z% packed"** label on the progress bar — progress, not a readiness verdict. (The group screen keeps its v1 bare "%" until it converts.)
 
-**Qadian removed entirely** (was a hard-coded packing list). Deleted the `QADIAN` constant and its template branch, the "Use the Qadian packing list" option in the v1 New-trip modal, and the brief pilgrimage opt-in. No profile is left empty: the pilgrimage/religious profile keeps its own generic starters (Essentials, Modesty & prayer, Long journey, Documents); the universal fallback (documents, packing basics, departure day) is unchanged. The `api.test.js` fixture `qadian()` was renamed `sampleTrip()`, and test trip names/group examples were made neutral, so no "Qadian" remains in the product or tests. (The word still appears once in `docs/PRODUCT_DEFINITION.md` — the fixed Stage-1 spec — as a market example; that doc is a source of truth and is left untouched.)
+**The old hard-coded religious-trip packing list was removed entirely.** Deleted the big single-destination constant and its template branch, its option in the v1 New-trip modal, and a brief pilgrimage opt-in. No profile is left empty: the pilgrimage/religious profile keeps its own generic starters (Essentials, Modesty & prayer, Long journey, Documents); the universal fallback (documents, packing basics, departure day) is unchanged. The `api.test.js` sample-data fixture was renamed `sampleTrip()`, and test trip names and group examples were made neutral. The product definition's one market example was updated too, so the destination name no longer appears anywhere in the repo.
 
 **Fixes found on the way.**
 - *Offline boot for an empty account.* With the auto-seed gone, a signed-in account with no trips couldn't boot offline — `bootOffline` required `local.trips.length` and otherwise showed an error. It now boots any valid session straight into the v2 Home (empty state included) and reconciles when the network returns.
@@ -192,6 +192,17 @@ The signed-in experience is still v1 (visual split during the build, to be remov
 **Tests.** API `sampleTrip()` rename kept the 36 API tests green. Browser tests updated for the new flow (a new account lands on the empty Home; trips are created through the modal and opened from Home cards; packing uses the v2 checkbox) and added: the pilgrimage profile still offers starter lists, and the denser signed-in Trip item row holds the a11y floor (≥44/48px, ≥14px, no h-scroll) at 320px.
 
 `npm test`: 36. `npm run test:browser`: 14.
+
+## 2026-10-16 — Signed-in New-trip is the v2 flow; v1 modal removed
+
+The signed-in "Plan a trip" is now the v2 New-trip screen (a new `appView` value `new`), replacing the v1 `openModal` dialog — the last create-path still on v1.
+- Same three fields as the guest flow: **trip name**, **dates** (departure / return + "I don't know my dates yet"), and **who's going** (the four profiles) → the chosen profile's **ready-made starter lists**, pre-ticked and individually droppable. **Nothing is created until Create** (no auto-create); Create builds the trip, syncs (`touch`), and opens it.
+- The field rendering and the trip builder are now **shared** between guest and signed-in: `tripFormFields(wrap, form, rerender)` draws the fields and `buildTripFromForm(form)` builds the trip. `renderGNew` (guest) and `renderNewTripV2` (signed-in) are thin wrappers that add their own header, Back and Create handler; `gCreateTrip` and `ntCreate` differ only in persistence (guest store vs server sync) and navigation.
+- Dead v1 code removed with the modal: `newTrip()`, `mkTrip()` and the `STARTER` constant (the v1 modal's "empty / starter" templates). `mkList`/`mkLeaveList` stay (still used by list creation and the leave-list backfill).
+
+**Tests.** The signed-in `createTrip` browser helper now drives the v2 screen (name + optional profile → Create) instead of the modal. Added a test: a signed-in user opens New-trip, **nothing is created just by opening it**, picking a profile adds its ready-made lists, Create lands on the Trip, and the screen holds the a11y floor at 320px.
+
+`npm test`: 36. `npm run test:browser`: 15.
 
 ## 2026-10-16 — Service-worker cache staleness (guest screens shipped looking pink on the live site)
 

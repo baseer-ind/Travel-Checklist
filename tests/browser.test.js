@@ -65,11 +65,13 @@ async function a11y(page, label) {
     await pg.getByRole("button", { name: "Log in" }).click();
     await pg.locator("#main h1", { hasText: "Hi " + name }).first().waitFor({ timeout: 8000 });
   }
-  // Create a trip through the normal New-trip flow (v1 modal over the v2 Home), landing on the v2 Trip.
-  async function createTrip(pg, name, tpl) {
+  // Create a trip through the v2 New-trip screen (Home "Plan a trip" → name + optional profile → Create),
+  // landing on the v2 Trip. With no profile the universal starter lists are used; nothing is auto-created.
+  async function createTrip(pg, name, profile) {
     await pg.getByRole("button", { name: /^Plan a/ }).click();
-    await pg.locator("#mInput").fill(name);
-    if (tpl) await pg.locator("#mSel").selectOption({ value: tpl });
+    await pg.locator("#main h1", { hasText: "Plan a trip" }).first().waitFor({ timeout: 8000 });
+    await pg.getByLabel("Trip name").fill(name);
+    if (profile) await pg.getByRole("radio", { name: profile }).click();
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: name }).first().waitFor({ timeout: 8000 });
   }
@@ -94,7 +96,7 @@ async function a11y(page, label) {
     await signup(page, "Walker", "secret1");
     // a brand-new account lands on the empty v2 Home — nothing is seeded
     await page.getByRole("heading", { name: "Where to next?" }).waitFor({ timeout: 8000 });
-    await createTrip(page, "Trip to Tokyo", "starter");
+    await createTrip(page, "Trip to Tokyo");
     await addItem(page, "Travel pillow");
     await page.getByRole("checkbox", { name: "Pack: Travel pillow" }).click();
     await page.getByRole("checkbox", { name: "Packed: Travel pillow" }).waitFor({ timeout: 8000 });
@@ -145,7 +147,7 @@ async function a11y(page, label) {
 
     // Device A signs up and makes a trip — createTrip leaves A on the new trip's screen.
     await signup(a, "Dyad", "secret1");
-    await createTrip(a, "Trip to Tokyo", "starter");
+    await createTrip(a, "Trip to Tokyo");
     await a.getByText("✓ Saved").waitFor({ timeout: 8000 });
 
     // Device B logs into the same account, pulls the trip and opens it from Home.
@@ -537,7 +539,7 @@ async function a11y(page, label) {
     const O = await browser.newContext({ viewport: { width: 375, height: 812 } });
     const o = await O.newPage();
     await signup(o, "Omar", "secret1");
-    await createTrip(o, "Trip to Tokyo", "starter");
+    await createTrip(o, "Trip to Tokyo");
     await addItem(o, "Beach towel");
     await o.getByRole("checkbox", { name: "Pack: Beach towel" }).click();   // pack the shared item
     await addItem(o, "OmarSecret");
@@ -548,7 +550,7 @@ async function a11y(page, label) {
     const N = await browser.newContext({ viewport: { width: 375, height: 812 } });
     const n = await N.newPage();
     await signup(n, "Nadia", "secret2");
-    await createTrip(n, "Trip to Tokyo", "starter");
+    await createTrip(n, "Trip to Tokyo");
     await addItem(n, "Sunhat");
     await n.getByRole("checkbox", { name: "Pack: Sunhat" }).click();
     await n.getByText("✓ Saved").waitFor({ timeout: 10000 });
@@ -605,11 +607,40 @@ async function a11y(page, label) {
     const ctx = await browser.newContext({ viewport: { width: 320, height: 720 } });
     const pg = await ctx.newPage();
     await signup(pg, "Tess", "secret1");
-    await createTrip(pg, "Narrow trip", "starter");
+    await createTrip(pg, "Narrow trip");
     await addItem(pg, "Travel adapter");
     await pg.getByRole("button", { name: "Shared with family: Travel adapter" }).click();   // make it private (shows the tag + eye-on)
     await pg.waitForTimeout(120);
     await a11y(pg, "Signed-in Trip (320px)");
+    await ctx.close();
+  });
+
+  // The signed-in New-trip screen is the v2 flow (replacing the v1 modal): three fields, profile →
+  // ready-made lists, and nothing created until Create. Also holds the a11y floor at 320px.
+  await test("signed-in New-trip (v2): nothing auto-created; profile adds ready-made lists", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 320, height: 720 } });
+    const pg = await ctx.newPage();
+    await signup(pg, "Nia", "secret1");
+    const countTrips = () => pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      return all.length;
+    });
+    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await pg.locator("#main h1", { hasText: "Plan a trip" }).first().waitFor({ timeout: 8000 });
+    assert.equal(await countTrips(), 0, "opening the New-trip form creates nothing (no auto-create)");
+    await pg.getByLabel("Trip name").fill("Beach week");
+    await pg.getByRole("radio", { name: /Family/ }).click();   // profile → its ready-made lists
+    await a11y(pg, "New-trip (320px)");
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.locator("#main h1", { hasText: "Beach week" }).first().waitFor({ timeout: 8000 });
+    assert.equal(await countTrips(), 1, "exactly one trip exists after Create");
+    const lists = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      return all.map((x) => x.trip).find((t) => t.name === "Beach week").lists.map((l) => l.name);
+    });
+    assert.ok(lists.length >= 2, "the chosen profile's ready-made lists are added: " + JSON.stringify(lists));
     await ctx.close();
   });
 

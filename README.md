@@ -4,12 +4,12 @@ Status: the code is built and tested (see Testing). It has been tested against a
 1. What the website does
 For everyone in the family
 Log in with a name and password. No Google, no email.
-Trips (for example "Trip to Qadian"), each with several checklists (Clothing, Gadgets, Health…).
+Trips (for example "Trip to Tokyo"), each with several checklists (Clothing, Gadgets, Health…).
 For every item: ✓ packed, ✕ not needed, − remove, and 👁️ share / 🙈 private.
 Add your own items. An emoji is picked for you.
 Countdown timer: set a travel date and see days, hours, minutes and seconds left.
 🧳 Everything packed! If something isn't ticked, it tells you exactly what's missing.
-New accounts start with the Qadian packing list already loaded (55 items in 9 checklists). Everyone gets their own copy, so one person's ticks never change another person's.
+New accounts start empty: you create your first trip and pick ready-made starter lists for it — nothing is added until you do. Everyone gets their own copy, so one person's ticks never change another person's.
 Auto-saves a moment after every change. A badge shows Saved, Saving… or Not saved, retrying.
 Works on phones, can be installed to the home screen, and the app shell works offline.
 Family connection (one code connects everyone)
@@ -47,7 +47,7 @@ Open Settings → Environment Variables and add:
 Name	Value	Required?
 ADMIN_PASSWORD	the admin password you choose (long and private)	Yes
 ADMIN_USERNAME	the admin's login name	No (default: admin)
-FAMILY_CODE	a secret word your family types to join, for example qadian2026	Recommended
+FAMILY_CODE	a secret word your family types to join, for example travel2026	Recommended
 SESSION_SECRET	any long random text	No (one is made from the database key if empty)
 If you leave FAMILY_CODE out, sign-up is closed. Only you can add people (Admin → People → Add a family member), and they won't be connected to each other automatically.
 Then go to Deployments, tap ⋯ on the latest one, and choose Redeploy.
@@ -62,7 +62,7 @@ You see	It means
 Send them:
 the link https://YOUR-PROJECT.vercel.app
 the family code
-They open the link, tap Create account, choose a name and password, type the family code, and they're in. Each new account opens straight onto the Qadian list. On a phone, they can tap the browser menu and choose Add to Home screen to get an app icon.
+They open the link, tap Create account, choose a name and password, type the family code, and they're in. Each new account opens on an empty home, where they create their first trip. On a phone, they can tap the browser menu and choose Add to Home screen to get an app icon.
 You log in with your admin name and ADMIN_PASSWORD.
 4. Everyday admin jobs
 Job	How

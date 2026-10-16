@@ -44,7 +44,7 @@ All names below were checked only for sense, not for trademark or domain availab
 | Profile | Who | What they need most | Starter templates |
 | --- | --- | --- | --- |
 | Family | One organiser (often a parent) plus 2 to 8 members on their own phones. | See who is ready; stop duplicate packing; kids' lists. | Family packing, kids, documents, home, departure day. |
-| Pilgrimage or religious group | Jamaat, Umrah or Hajj group, church or temple trip; 5 to 50 people, one coordinator. | Shared group list (who brings what), modesty and prayer items, long bus or train days. | Qadian, Umrah, group travel, long-journey comfort. |
+| Pilgrimage or religious group | Jamaat, Umrah or Hajj group, church or temple trip; 5 to 50 people, one coordinator. | Shared group list (who brings what), modesty and prayer items, long bus or train days. | Umrah, Hajj, group travel, long-journey comfort. |
 | Solo domestic | Weekend or work trip within the country. | Fast start, reuse last trip. | Weekend, work trip, train or flight. |
 | Solo international | First or occasional international traveller. | Document and money checklist, "verify this" prompts. | International documents, money, digital readiness. |
 
