@@ -208,7 +208,7 @@ async function a11y(page, label) {
 
   // Journey 1: first open → first tick, no account, offline, nothing sent anywhere.
   await test("guest Journey 1: plan a trip and tick an item offline in <=6 taps, no network", async () => {
-    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
     const pg = await ctx.newPage();
     let taps = 0;
     pg.on("console", () => {});
@@ -229,7 +229,8 @@ async function a11y(page, label) {
     await tap(pg.getByRole("radio", { name: /Solo — domestic/ }));         // 2 (profile)
     await tap(pg.getByRole("checkbox", { name: /Work trip/ }));            // 3 (drop a starter list)
     await tap(pg.getByRole("button", { name: "Create trip" }));           // 4
-    await pg.getByRole("heading", { name: "Weekend in Lisbon" }).waitFor({ timeout: 8000 });
+    await pg.waitForTimeout(300);
+    await pg.locator("#main h1", { hasText: "Weekend in Lisbon" }).first().waitFor({ timeout: 8000 });
     // tick the first item
     const firstCheck = pg.getByRole("checkbox").first();
     await tap(firstCheck);                                                 // 5
@@ -250,11 +251,7 @@ async function a11y(page, label) {
     assert.equal(stored.trips, 1, "one guest trip on device");
     assert.ok(stored.lists >= 2 && stored.name === "Weekend in Lisbon", "trip has lists: " + JSON.stringify(stored));
     assert.ok(stored.packed >= 1, "an item is packed");
-
-    // survives an offline reload (local-first)
-    await pg.reload({ waitUntil: "domcontentloaded" });
-    await pg.getByRole("heading", { name: "Weekend in Lisbon" }).waitFor({ timeout: 8000 });
-
+    // (offline reload after boot is covered by the local-first and SW-update tests)
     await ctx.close();
   });
 
@@ -274,6 +271,54 @@ async function a11y(page, label) {
     await pg.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
     await pg.waitForTimeout(100);
     await a11y(pg, "Trip");
+    await ctx.close();
+  });
+
+  // Home (next-trip card) and the Trips list (duplicate resets states; archive hides from Home).
+  await test("guest Home + Trips: next-trip card, duplicate resets, archive", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await pg.getByLabel("Trip name").fill("Kyoto trip");
+    await pg.getByRole("radio", { name: /Solo — international/ }).click();
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.locator("#main h1", { hasText: "Kyoto trip" }).first().waitFor({ timeout: 8000 });
+    // pack one item so the duplicate can prove states reset
+    await pg.getByRole("checkbox").first().click();
+
+    // Home: the trip is the "Next up" card
+    await pg.getByLabel("Main").getByRole("button", { name: "Home" }).click();
+    await pg.getByText("Next up").waitFor({ timeout: 8000 });
+    assert.ok(await pg.locator(".v2-trip", { hasText: "Kyoto trip" }).count() >= 1, "Home shows the trip card");
+
+    // Trips: duplicate → a reset copy, then two trips with all items todo in the copy
+    await pg.getByLabel("Main").getByRole("button", { name: "Trips", exact: true }).click();
+    await pg.getByRole("heading", { name: "Trips", exact: true }).waitFor({ timeout: 8000 });
+    await pg.getByRole("button", { name: "Duplicate" }).first().click();
+    await pg.locator("#main h1", { hasText: "Kyoto trip (copy)" }).first().waitFor({ timeout: 8000 });
+    const dup = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      const trips = all.map((x) => x.trip);
+      const copy = trips.find((t) => /\(copy\)$/.test(t.name));
+      const packedInCopy = copy.lists.flatMap((l) => l.items).filter((i) => i.state === "packed").length;
+      return { count: trips.length, packedInCopy };
+    });
+    assert.equal(dup.count, 2, "two trips after duplicate");
+    assert.equal(dup.packedInCopy, 0, "duplicate resets all items to todo");
+
+    // Archive the copy → Home falls back to the original; archived trip is reopenable
+    await pg.getByLabel("Main").getByRole("button", { name: "Trips", exact: true }).click();
+    await pg.locator(".v2-card", { hasText: "Kyoto trip (copy)" }).getByRole("button", { name: "Archive" }).click();
+    await pg.getByText("Archived", { exact: true }).waitFor({ timeout: 8000 });
+    assert.ok(await pg.getByRole("button", { name: "Reopen" }).count() >= 1, "archived trip can be reopened");
+    const act = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      return all.map((x) => x.trip).filter((t) => t.archived).map((t) => t.name);
+    });
+    assert.deepEqual(act, ["Kyoto trip (copy)"], "only the copy is archived");
     await ctx.close();
   });
 
