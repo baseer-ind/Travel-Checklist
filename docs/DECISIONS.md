@@ -152,3 +152,24 @@ A first-ever visit used to reload once right after the SW installed, because `ac
 
 ### Still ahead
 The signed-in experience is still v1 (visual split during the build, to be removed before public launch per the user's directive). Remaining v2 screens: signed-in Home/Trip/Together, Member, Group list, Admin, Settings, Item sheet, Templates, plus applying "% ready" → "% packed" when the Together/Member v2 screens are built.
+
+## 2026-10-16 — Desktop shell fix + signed-in v2 Together/Member
+
+**Shared frame, now web-friendly.** The v1 desktop grid (`.app { grid-template-columns: 300px 1fr }` at ≥880px) was still applying in v2/guest mode, reserving an empty sidebar column and pinning `.v2-wrap` off-centre. Fixed centrally so every v2 screen inherits it:
+- `.app` is forced to `display:block` under `body.v2`/`body.guest` (the v1 sidebar/scrim/menu are also hidden there), so `.v2-wrap`'s `max-width:560px; margin:0 auto` actually centres.
+- The fixed bottom tab bar is constrained to the same 560px column (`margin:0 auto` + side borders), not full-bleed.
+- **New token `--canvas: #EFEAE1`** — a warm backdrop *behind* the centred frame on wide screens. The frame (`.v2-wrap`) is an explicit white (`--bg`) sheet on that canvas, so the centred app reads as intentional on desktop; on phones the frame fills the viewport and the canvas never shows. This adds one surface the Stage-2 palette didn't name (it specified white page + one warm paper surface); it is used only as the out-of-frame desktop backdrop, never as a content surface, so the "white background, one warm paper surface" rule still holds inside the app.
+
+**Palette bug fixed (was affecting every v2 screen).** `style.css` redefined `--ink` and `--bg` on `:root` with v1 pastel values (`#3b3552`, `#fdf8fb`) and loads *after* `tokens.css`, so it silently overrode the Design_1 tokens — every v2 screen had been rendering on v1 pink with v1 purple ink, not the intended white/near-black. The v1 pastel palette is now scoped to `body:not(.v2)`, so v1 screens (and the v1 shared-list guest view, `body.guest`) keep their pastels while v2 gets the correct tokens.
+
+**Signed-in Together (v2).** Replaces v1 `renderFamily`. Uses the shared v2 frame (brand bar + Back to trips; the v1 sidebar is hidden while on this screen). Not connected → an inline v2 connect-code card (no modal). Connected → member cards (initials avatar in one of five accent colours, name, `you` badge, trip count + last-active, and **"X% packed"**), a recent-activity feed, and tools (use a different code / leave).
+
+**Signed-in Member (v2).** Replaces v1 `renderMember`. Read-only trips → lists → items with a packed-check / skip-cross / hollow-dot state mark and **"X% packed"** per trip. Back to Together. The server's privacy filter still removes private items before they reach this view.
+
+**"% ready" → "% packed" applied here.** Per the long-standing decision, the member cards and member trips show **"% packed"** — literal progress (packed of packed+to-go; skipped items excluded), never "ready". This is progress, not a readiness score, so it satisfies the no-score hard rule (the rule forbids a readiness *verdict*, not showing how much is packed).
+
+**Tests** (`tests/browser.test.js`):
+- *desktop shell* — at **768px and 1280px**: content is centred (equal gutters, not left-pinned), the frame is capped at its max-width, the tab bar aligns to the frame column, and there is no horizontal scroll.
+- *signed-in Together/Member* — two family members; a member card shows "% packed" and never "ready"; the own card has the `you` badge; opening a member shows read-only lists with the shared item visible, the **private item hidden**, and **no packing controls**; a11y (≥44/48px targets, ≥14px text, no h-scroll) holds on both screens.
+
+`npm test`: 36. `npm run test:browser`: 12.

@@ -6,6 +6,7 @@
   /* Surfaces & text */
   --bg: #FFFFFF;          /* page background: pure white */
   --surface: #F7F4EF;     /* the one warm off-white (paper) surface */
+  --canvas: #EFEAE1;      /* desktop backdrop behind the centred app frame (wide screens only) */
   --line: #E6E1D8;        /* warm hairline border */
   --line-strong: #CFC8BA; /* stronger border / input outline */
   --ink: #171A1F;         /* primary text */

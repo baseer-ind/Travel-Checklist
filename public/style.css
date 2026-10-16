@@ -1,11 +1,16 @@
 :root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+/* v1 pastel palette. Scoped to :not(.v2) so it does NOT override the Design_1 tokens
+   in tokens.css on v2 screens — style.css loads after tokens.css, and these reuse the
+   shared names --ink/--bg, which otherwise clobbered v2's white/near-black globally. */
+body:not(.v2){
   --ink:#3b3552; --ink-soft:#7a7391;
   --peach:#ffd9c9; --mint:#cdeedc; --lavender:#dcd3f5; --sky:#d2e8f7; --butter:#fff1c4; --rose:#ffd3df;
   --bg:#fdf8fb; --card:#ffffff;
   --ok:#8fd5ae; --ok-ink:#1f6b47; --no:#f6a9b8; --no-ink:#8a2c42;
-  box-sizing:border-box;
-  padding-top:env(safe-area-inset-top,0px);
-  padding-bottom:env(safe-area-inset-bottom,0px);
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px);color-scheme:light}
 *,*::before,*::after{box-sizing:inherit}
@@ -179,8 +184,12 @@ li.skip .name{color:#b08a96;text-decoration:line-through;text-decoration-color:v
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ===== family version additions ===== */
-body.guest .side,body.guest .scrim,body.guest .menu{display:none!important}
-body.guest .app{display:block}
+body.guest .side,body.guest .scrim,body.guest .menu,body.v2 .side,body.v2 .scrim,body.v2 .menu{display:none!important}
+/* The v1 desktop grid (300px sidebar + 1fr) must not apply in v2/guest mode: it
+   reserves an empty sidebar column and pins .v2-wrap off-centre. Force block so
+   .v2-wrap's own max-width + margin:auto centres the content on wide screens. */
+body.guest .app,body.v2 .app{display:block}
+body.v2 .main{max-width:none;width:auto;padding:0}
 .auth{max-width:420px;margin:6vh auto 0;background:var(--card);border-radius:28px;padding:26px 22px;box-shadow:0 14px 40px rgba(110,90,170,.18)}
 .auth .big{font-size:48px;text-align:center}
 .auth h1{font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:600;font-size:28px;text-align:center;margin:4px 0 4px}
