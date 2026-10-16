@@ -11,7 +11,7 @@ html{scroll-padding-top:env(safe-area-inset-top,0px);color-scheme:light}
 *,*::before,*::after{box-sizing:inherit}
 body{
   margin:0;background:var(--bg);color:var(--ink);
-  font-family:"Nunito",system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:500;
+  font-family:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:500;
   background-image:
     radial-gradient(circle at 12% 8%,var(--lavender) 0,transparent 32%),
     radial-gradient(circle at 92% 18%,var(--peach) 0,transparent 30%),
@@ -36,7 +36,7 @@ button{font:inherit;color:inherit}
 .topbar{display:flex;align-items:center;gap:10px;margin-bottom:6px}
 .menu{
   border:0;border-radius:16px;background:var(--card);box-shadow:0 4px 14px rgba(120,100,160,.12);
-  padding:10px 14px;font-family:"Fredoka",system-ui,sans-serif;font-weight:600;font-size:16px;cursor:pointer;
+  padding:10px 14px;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:600;font-size:16px;cursor:pointer;
 }
 @media (min-width:880px){
   .app{display:grid;grid-template-columns:300px 1fr}
@@ -47,10 +47,10 @@ button{font:inherit;color:inherit}
 }
 
 /* sidebar */
-.side h2{font-family:"Fredoka",system-ui,sans-serif;font-size:20px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.side h2{font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:20px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
 .newtrip{
   width:100%;border:0;border-radius:16px;padding:12px;background:var(--peach);cursor:pointer;
-  font-family:"Fredoka",system-ui,sans-serif;font-weight:600;font-size:16px;margin-bottom:14px;
+  font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:600;font-size:16px;margin-bottom:14px;
 }
 .trip{margin-bottom:6px}
 .trip-btn{
@@ -75,7 +75,7 @@ button{font:inherit;color:inherit}
 /* trip header */
 .trip-head{display:flex;align-items:flex-start;gap:10px;margin:10px 0 4px}
 .trip-head .plane{font-size:34px;line-height:1.1}
-.trip-head h1{font-family:"Fredoka",system-ui,sans-serif;font-weight:600;font-size:clamp(26px,7vw,36px);margin:0;flex:1;min-width:0;overflow-wrap:anywhere;line-height:1.15}
+.trip-head h1{font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:600;font-size:clamp(26px,7vw,36px);margin:0;flex:1;min-width:0;overflow-wrap:anywhere;line-height:1.15}
 .icons{display:flex;gap:6px}
 .icon{width:38px;height:38px;border-radius:13px;border:0;background:var(--card);box-shadow:0 3px 10px rgba(120,100,160,.12);cursor:pointer;font-size:16px}
 .icon:hover{background:var(--butter)}
@@ -83,11 +83,11 @@ button{font:inherit;color:inherit}
 
 .countdown{margin:16px 0 0;background:linear-gradient(135deg,var(--sky),var(--lavender));border-radius:22px;padding:14px 16px;box-shadow:0 6px 20px rgba(120,100,160,.14)}
 .cd-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700;flex-wrap:wrap}
-.cd-date{font-family:"Fredoka",system-ui,sans-serif;font-size:17px}
+.cd-date{font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:17px}
 .cd-btns{display:flex;gap:12px}
 .cd-boxes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
 .cd-box{background:rgba(255,255,255,.85);border-radius:16px;padding:10px 4px;text-align:center}
-.cd-box b{display:block;font-family:"Fredoka",system-ui,sans-serif;font-weight:600;font-size:clamp(24px,7vw,34px);line-height:1.1;font-variant-numeric:tabular-nums}
+.cd-box b{display:block;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:600;font-size:clamp(24px,7vw,34px);line-height:1.1;font-variant-numeric:tabular-nums}
 .cd-box span{font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px}
 .cd-note{margin-top:10px;font-weight:700;text-align:center}
 .cd-empty{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-weight:700}
@@ -120,7 +120,7 @@ button{font:inherit;color:inherit}
 .add input::placeholder,.modal input::placeholder{color:#b3accb}
 .add input:focus,.modal input:focus{outline:3px solid var(--sky);border-color:#b9a9ef}
 .btn{
-  font-family:"Fredoka",system-ui,sans-serif;font-weight:600;font-size:17px;
+  font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:600;font-size:17px;
   border:0;border-radius:18px;padding:12px 20px;cursor:pointer;background:var(--peach);
   transition:transform .12s ease, filter .12s ease;
 }
@@ -156,7 +156,7 @@ li.skip .name{color:#b08a96;text-decoration:line-through;text-decoration-color:v
 .empty{text-align:center;color:var(--ink-soft);padding:26px 12px;background:var(--card);border-radius:20px;font-weight:600}
 .welcome{text-align:center;padding:50px 10px}
 .welcome .big{font-size:56px}
-.welcome h1{font-family:"Fredoka",system-ui,sans-serif}
+.welcome h1{font-family:"Plus Jakarta Sans",system-ui,sans-serif}
 
 .finish{margin-top:22px}
 .finish .btn{width:100%;padding:16px;font-size:20px;background:var(--mint);box-shadow:0 8px 22px rgba(120,190,150,.25)}
@@ -172,7 +172,7 @@ li.skip .name{color:#b08a96;text-decoration:line-through;text-decoration-color:v
 .modal{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(59,53,82,.4);padding:16px}
 .modal.show{display:flex}
 .modal .card{background:#fff;border-radius:26px;padding:22px;width:100%;max-width:400px;box-shadow:0 20px 50px rgba(60,40,120,.3);animation:pop .2s ease}
-.modal h3{font-family:"Fredoka",system-ui,sans-serif;font-size:22px;margin:0 0 6px}
+.modal h3{font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:22px;margin:0 0 6px}
 .modal p{margin:0 0 12px;color:var(--ink-soft);font-weight:600}
 .modal label.chk{display:flex;gap:8px;align-items:center;margin:12px 0 0;font-weight:700}
 .modal .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
@@ -183,7 +183,7 @@ body.guest .side,body.guest .scrim,body.guest .menu{display:none!important}
 body.guest .app{display:block}
 .auth{max-width:420px;margin:6vh auto 0;background:var(--card);border-radius:28px;padding:26px 22px;box-shadow:0 14px 40px rgba(110,90,170,.18)}
 .auth .big{font-size:48px;text-align:center}
-.auth h1{font-family:"Fredoka",system-ui,sans-serif;font-weight:600;font-size:28px;text-align:center;margin:4px 0 4px}
+.auth h1{font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:600;font-size:28px;text-align:center;margin:4px 0 4px}
 .auth .sub{text-align:center;margin-bottom:16px}
 .tabs{display:flex;gap:6px;background:#f4f0fa;border-radius:16px;padding:4px;margin-bottom:14px}
 .tab{flex:1;border:0;border-radius:12px;padding:10px;background:transparent;font-weight:700;cursor:pointer}
@@ -208,7 +208,7 @@ body.guest .app{display:block}
 .sidefoot button{border:0;background:#f6f1fb;border-radius:14px;padding:10px 12px;text-align:left;font-weight:700;cursor:pointer}
 .sidefoot button:hover{background:var(--butter)}
 .panel{background:var(--card);border-radius:22px;padding:16px;box-shadow:0 6px 20px rgba(120,100,160,.12);margin:14px 0}
-.panel h2{font-family:"Fredoka",system-ui,sans-serif;font-size:20px;margin:0 0 10px}
+.panel h2{font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:20px;margin:0 0 10px}
 .inline{display:flex;gap:8px;flex-wrap:wrap}
 .inline .field{flex:1;min-width:140px;margin:0}
 .ucard{background:var(--card);border-radius:20px;padding:14px;margin-bottom:10px;box-shadow:0 4px 14px rgba(120,100,160,.10)}
@@ -224,14 +224,14 @@ body.guest .app{display:block}
 .flash{background:var(--mint);border-radius:18px;padding:14px;margin:14px 0;font-weight:700}
 .flash code{display:inline-block;background:#fff;border-radius:10px;padding:4px 10px;font-size:18px;margin:6px 6px 6px 0;user-select:all;font-family:ui-monospace,Menlo,Consolas,monospace}
 .flash button{border:0;border-radius:10px;padding:6px 12px;font-weight:700;cursor:pointer;background:#fff}
-.dtrip{margin:10px 0 4px;font-family:"Fredoka",system-ui,sans-serif;font-size:19px}
+.dtrip{margin:10px 0 4px;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:19px}
 .dlist{margin:6px 0 10px 8px;padding-left:10px;border-left:3px solid var(--lavender)}
 .dlist b{display:block;margin-bottom:2px}
 .dlist div{font-weight:600;font-size:15px;line-height:1.5}
 .dlist .packed{color:var(--ok-ink)} .dlist .skip{color:#b08a96;text-decoration:line-through}
 .modal select{width:100%;font:inherit;font-weight:700;color:var(--ink);border:2px solid var(--lavender);background:#fff;border-radius:18px;padding:12px 14px;margin-top:10px}
 
-.pagetitle{font-family:"Fredoka",system-ui,sans-serif;font-weight:600;font-size:clamp(24px,6vw,32px);margin:10px 0 4px}
+.pagetitle{font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:600;font-size:clamp(24px,6vw,32px);margin:10px 0 4px}
 .loading{text-align:center;padding:40px}
 
 .act{width:36px;height:36px;font-size:17px}
@@ -251,7 +251,7 @@ li.row.priv .emoji{opacity:.6}
 .toast.show{transform:translate(-50%,0)}
 .bell{border:0;border-radius:99px;padding:6px 12px;background:var(--butter);font-weight:700;cursor:pointer;margin-left:auto}
 .bell+.status{margin-left:8px}
-.sidehead{font-family:"Fredoka",system-ui,sans-serif;font-weight:600;font-size:17px;margin:16px 4px 6px}
+.sidehead{font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:600;font-size:17px;margin:16px 4px 6px}
 .dot{margin-left:8px;font-size:12px;background:var(--butter);border-radius:99px;padding:1px 8px}
 .ess{background:var(--card);border-radius:20px;padding:12px 14px;margin:14px 0 0;box-shadow:0 6px 20px rgba(120,100,160,.10);border:2px solid var(--mint)}
 .ess.warn{border-color:var(--no);background:#fff6f8}

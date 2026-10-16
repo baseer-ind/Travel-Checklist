@@ -94,3 +94,11 @@ Still pending (next step): the per-trip `/api/trips` sync queue with revisions a
 Verified by `tests/browser.test.js` (Playwright, 375 px): the existing offline/local-first walks plus a **two-device conflict** — device A's edit wins, device B's stale edit is rejected and kept as a recovered copy, and the server holds only the winner's edit. `npm test` (Node API): 36/36. `npm run test:browser`: 5/5.
 
 Next: service-worker rework (self-hosted fonts, "Updated" toast, drop `'unsafe-inline'`); then screens on Design_1. No-account guest mode remains Journey-1 screen work.
+
+## 2026-10-16 — Service worker rework and self-hosted font
+
+- **No `skipWaiting` on install.** A new version waits; the page shows an "Updated to the latest version." toast, tells the worker to activate, then reloads after a short delay so the new assets load cleanly. Verified by a browser test (update activates, old cache cleaned, app still boots offline afterwards).
+- **Fonts are self-hosted.** Plus Jakarta Sans (one latin variable woff2) lives in `public/fonts/`, declared in `public/fonts.css`, precached by the SW. The Google Fonts `<link>`s are gone, so the app has no cross-origin font dependency and works offline.
+- **v1 shell adopts the design font.** `style.css` dropped Fredoka/Nunito for Plus Jakarta Sans. This is a small restyle of the *v1* shell (not the approved design) and the only way to remove the Google Fonts dependency without hosting two more families; it also moves v1 toward the approved look. v2 screens use the same font via `tokens.css`.
+- **CSP hardened.** The inline SW-registration script moved into `app.js`, so `script-src` is now `'self'` (no `'unsafe-inline'`); `font-src 'self'`; Google Fonts hosts removed. Inline *style attributes* still require `style-src 'unsafe-inline'` — unchanged, and out of scope here.
+- `server.js` gained an optional `PUBLIC_DIR` (tests serve a temp copy to simulate a deploy); harmless in production.

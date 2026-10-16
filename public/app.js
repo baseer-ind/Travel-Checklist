@@ -1043,4 +1043,23 @@
     $("main").innerHTML = ""; var c = el("div", "auth"); c.appendChild(el("div", "big", "😕")); c.appendChild(el("h1", null, "Can't load right now"));
     c.appendChild(el("p", "sub", errText(e))); c.appendChild(btn("btn full", "Try again", function () { location.reload(); })); $("main").appendChild(c);
   }
+
+  /* ================= service worker ================= */
+  function registerSW() {
+    if (!("serviceWorker" in navigator)) return;
+    var updating = false, reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (!updating || reloaded) return; reloaded = true;
+      setTimeout(function () { location.reload(); }, 800);   // let the "Updated" toast show, then pick up the new assets
+    });
+    navigator.serviceWorker.register("/sw.js").then(function (reg) {
+      function activate(sw) { updating = true; toast("Updated to the latest version."); sw.postMessage({ type: "SKIP_WAITING" }); }
+      if (reg.waiting && navigator.serviceWorker.controller) activate(reg.waiting);
+      reg.addEventListener("updatefound", function () {
+        var sw = reg.installing; if (!sw) return;
+        sw.addEventListener("statechange", function () { if (sw.state === "installed" && navigator.serviceWorker.controller) activate(sw); });
+      });
+    }).catch(function () { });
+  }
+  registerSW();
 })();
