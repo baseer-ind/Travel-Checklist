@@ -1,7 +1,10 @@
 // Service worker: precaches the app shell (and self-hosted font) so the page opens offline.
 // API calls always go to the network. A new version does NOT take over on its own — it waits
 // until the page tells it to (SKIP_WAITING), so the page can show an "Updated" toast first.
-const CACHE = "baggo-shell-v5";
+// Bump this on every change to a shell asset (app.js, the CSS, db/sync.js) — the fetch handler is
+// cache-first, so without a new cache name returning users keep the old cached assets. Bumping forces
+// the new SW to re-cache the shell and the update flow (SKIP_WAITING → reload) to serve it.
+const CACHE = "baggo-shell-v6";
 const SHELL = [
   "/", "/index.html", "/fonts.css?v=1", "/style.css?v=1", "/tokens.css?v=1", "/v2.css?v=1",
   "/db.js?v=1", "/sync.js?v=1", "/app.js?v=1",

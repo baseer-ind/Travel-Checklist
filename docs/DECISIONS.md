@@ -192,3 +192,17 @@ The signed-in experience is still v1 (visual split during the build, to be remov
 **Tests.** API `sampleTrip()` rename kept the 36 API tests green. Browser tests updated for the new flow (a new account lands on the empty Home; trips are created through the modal and opened from Home cards; packing uses the v2 checkbox) and added: the pilgrimage profile still offers starter lists, and the denser signed-in Trip item row holds the a11y floor (≥44/48px, ≥14px, no h-scroll) at 320px.
 
 `npm test`: 36. `npm run test:browser`: 14.
+
+## 2026-10-16 — Service-worker cache staleness (guest screens shipped looking pink on the live site)
+
+**Symptom.** After the PR #10 palette/frame fix merged and deployed, the live site still showed the guest screens (Welcome, Home, Trip, Together) in the old v1 pink, left-pinned on desktop — while a fresh browser and the browser tests showed the correct Design_1 look.
+
+**Root cause — not the code.** The guest screens already set `body.className = "v2"` (via `gShell`) and render correctly in the current code (proven by a new test and a direct DOM check: body background `#EFEAE1` canvas, `.v2-wrap` centred, no h-scroll at 1280/768px). The fault was the **service worker**: `sw.js` is **cache-first** for the shell, with a **static cache name** and **unchanging asset URLs** (`/app.js?v=1`, `/style.css?v=1`, …). When PRs #5–#11 changed those assets, the cache name was not bumped, so **returning users kept being served the old cached pink `app.js`/CSS** forever; only first-time visitors (and tests) got the new files.
+
+**Fix.** Bump `CACHE` (`baggo-shell-v5` → `v6`), with a comment that it must be bumped on **every** shell-asset change. The existing update flow then re-caches the shell and swaps it in (SKIP_WAITING → `controllerchange` → reload). Longer term this should be automated (hash the asset URLs, or bump on build) so a human never has to remember.
+
+**Guard.** Added a browser test asserting the **guest Welcome** screen is centred on the canvas (not `#fdf8fb` pink) at 768px and 1280px — the earlier centring test only exercised a post-sign-in guest screen, which is why the regression class wasn't caught on the entry screen.
+
+**Not changed: the v1 sign-in and shared-list screens.** `renderAuth` and `renderSharedGuest` set `body.className = "guest"` and are still the v1 (pink) screens. Flipping them to `"guest v2"` was considered and rejected: their CSS uses v1-only tokens (`--card`, `--peach`, `--lavender`, `--sky`) defined only under `body:not(.v2)`, so under `.v2` the sign-in card and its primary button lose their backgrounds (verified by screenshot). Those two screens need a proper v2 rebuild, not a class flip; they stay v1 until then.
+
+`npm test`: 36. `npm run test:browser`: 16.

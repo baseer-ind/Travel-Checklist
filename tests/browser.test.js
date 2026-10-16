@@ -457,6 +457,37 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
+  // The no-account entry screen (guest Welcome) must get the Design_1 look on desktop too — centred on
+  // the warm canvas, not the v1 pink (#fdf8fb). The signed-in centring test above wouldn't catch a
+  // guest-only palette/frame regression, so assert it directly on the very first screen.
+  await test("guest Welcome at 768px and 1280px: centred on the canvas, not v1 pink", async () => {
+    const ctx = await browser.newContext({ serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    for (const width of [1280, 768]) {
+      await pg.setViewportSize({ width, height: 800 });
+      await pg.waitForTimeout(80);
+      const g = await pg.evaluate(() => {
+        const w = document.querySelector(".v2-wrap").getBoundingClientRect();
+        return {
+          iw: window.innerWidth, left: w.left, right: w.right, width: w.width,
+          bodyBg: getComputedStyle(document.body).backgroundColor,
+          hscroll: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      });
+      assert.ok(g.hscroll <= 1, `@${width}px guest Welcome has no h-scroll (overflow ${g.hscroll})`);
+      const lg = g.left, rg = g.iw - g.right;
+      assert.ok(Math.abs(lg - rg) <= 2, `@${width}px guest Welcome centred (gutters ${lg} vs ${rg})`);
+      assert.ok(lg > 40, `@${width}px guest Welcome not left-pinned (left gutter ${lg})`);
+      assert.ok(g.width <= 561, `@${width}px guest Welcome capped at its max-width (${g.width})`);
+      // the v1 pink page background (#fdf8fb = rgb(253,248,251)) must NOT be used; it must be the canvas
+      assert.notEqual(g.bodyBg, "rgb(253, 248, 251)", `@${width}px guest Welcome must not use the v1 pink background`);
+      assert.equal(g.bodyBg, "rgb(239, 234, 225)", `@${width}px guest Welcome uses the warm canvas (got ${g.bodyBg})`);
+    }
+    await ctx.close();
+  });
+
   // Signed-in v2 Together + Member: member cards show "% packed", opening a member is read-only, private items stay hidden.
   await test("signed-in Together/Member: % packed, read-only lists, private items hidden", async () => {
     // Omar: an account in the family with a shared item (packed) and a private item.
