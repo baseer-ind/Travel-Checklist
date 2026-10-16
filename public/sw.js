@@ -1,9 +1,9 @@
 // Service worker: precaches the app shell (and self-hosted font) so the page opens offline.
 // API calls always go to the network. A new version does NOT take over on its own — it waits
 // until the page tells it to (SKIP_WAITING), so the page can show an "Updated" toast first.
-const CACHE = "baggo-shell-v4";
+const CACHE = "baggo-shell-v5";
 const SHELL = [
-  "/", "/index.html", "/fonts.css?v=1", "/style.css?v=1", "/tokens.css?v=1",
+  "/", "/index.html", "/fonts.css?v=1", "/style.css?v=1", "/tokens.css?v=1", "/v2.css?v=1",
   "/db.js?v=1", "/sync.js?v=1", "/app.js?v=1",
   "/fonts/PlusJakartaSans-latin.woff2",
   "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png",

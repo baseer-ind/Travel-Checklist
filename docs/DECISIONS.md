@@ -102,3 +102,17 @@ Next: service-worker rework (self-hosted fonts, "Updated" toast, drop `'unsafe-i
 - **v1 shell adopts the design font.** `style.css` dropped Fredoka/Nunito for Plus Jakarta Sans. This is a small restyle of the *v1* shell (not the approved design) and the only way to remove the Google Fonts dependency without hosting two more families; it also moves v1 toward the approved look. v2 screens use the same font via `tokens.css`.
 - **CSP hardened.** The inline SW-registration script moved into `app.js`, so `script-src` is now `'self'` (no `'unsafe-inline'`); `font-src 'self'`; Google Fonts hosts removed. Inline *style attributes* still require `style-src 'unsafe-inline'` — unchanged, and out of scope here.
 - `server.js` gained an optional `PUBLIC_DIR` (tests serve a temp copy to simulate a deploy); harmless in production.
+
+## 2026-10-16 — Guest-first entry (Journey 1)
+
+Confirmed with the user: when there is no account, the app opens into the Design_1 **guest** experience (online and offline); a "Sign in" link reaches the existing v1 login for family/groups/admin, and signed-in users still get v1 until those screens are rebuilt. This satisfies the "works with no account" hard rule and matches "replace screen by screen".
+
+- New files: `public/v2.css` (Design_1 components on `tokens.css`); guest flow added to `app.js`.
+- Screens: **Welcome** (plan a trip / try a sample), **New trip** (one screen: name, dates, who's-going profile → starter lists pre-ticked, nothing added without you), **Trip** (list tabs, item rows with tick + "not needed" + quick add, progress). A minimal Home/Trips bottom bar; Together is not shown (no code, guest).
+- Starter lists per profile (family / pilgrimage / solo-domestic / solo-international) and three universals for no profile, per section A. International documents use "Check:" items (visa, vaccinations) — the app states no rule.
+- Storage: guest trips under the `"guest"` owner in IndexedDB; **no network at all** in the guest flow (the boot `/api/me` is the only call, and it's skipped offline). No server account is created.
+- Boot: no user → `enterGuest()`; offline with no session → `enterGuest()` (first-open offline now shows the guest Welcome, not the old "Can't load" error).
+
+Verified by `tests/browser.test.js`: a 6-tap, fully-offline walk (plan → profile → create → tick) that asserts **0 data-bearing API calls**, a trip with lists and a packed item stored under `"guest"`, and survival of an offline reload. `npm test`: 36. `npm run test:browser`: 7.
+
+Not yet built: the rest of the v2 screens (full Home, Trips list, Together/family, Member, Group, Admin, Settings, Item sheet, Templates, Departure-day surfacing), guest→account migration on sign-in, and applying the "% ready" → "% packed" relabel when the Together/Member screens are built.

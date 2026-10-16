@@ -23,6 +23,7 @@ const assert = require("assert");
 
   await test("sign up, create a trip, add and tick an item", async () => {
     await page.goto(base + "/", { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Sign in" }).click();
     await page.getByRole("tab", { name: "Create account" }).click();
     await page.locator("#aName").fill("Walker");
     await page.locator("#aPass").fill("secret1");
@@ -80,6 +81,7 @@ const assert = require("assert");
 
     // Device A signs up and seeds its trip.
     await a.goto(base + "/", { waitUntil: "networkidle" });
+    await a.getByRole("button", { name: "Sign in" }).click();
     await a.getByRole("tab", { name: "Create account" }).click();
     await a.locator("#aName").fill("Dyad"); await a.locator("#aPass").fill("secret1"); await a.locator("#aCode").fill("family");
     await a.getByRole("button", { name: "Create my account" }).click();
@@ -88,6 +90,7 @@ const assert = require("assert");
 
     // Device B logs into the same account and pulls the trip.
     await b.goto(base + "/", { waitUntil: "networkidle" });
+    await b.getByRole("button", { name: "Sign in" }).click();
     await b.locator("#aName").fill("Dyad"); await b.locator("#aPass").fill("secret1");
     await b.getByRole("button", { name: "Log in" }).click();
     await b.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
@@ -141,22 +144,26 @@ const assert = require("assert");
 
     // sign in and get the first SW controlling the page
     await p.goto(b2 + "/", { waitUntil: "networkidle" });
+    await p.getByRole("button", { name: "Sign in" }).click();
     await p.getByRole("tab", { name: "Create account" }).click();
     await p.locator("#aName").fill("Upd"); await p.locator("#aPass").fill("secret1"); await p.locator("#aCode").fill("family");
     await p.getByRole("button", { name: "Create my account" }).click();
     await p.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
     await p.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 8000 });
 
-    // ship a new SW version (byte change → new cache name) and ask the page to check for it
+    // ship a new SW version (bump the cache name → byte change) and ask the page to check for it
     const swPath = path.join(pub, "sw.js");
-    fs.writeFileSync(swPath, fs.readFileSync(swPath, "utf8").replace("baggo-shell-v4", "baggo-shell-v5"));
+    const swText = fs.readFileSync(swPath, "utf8");
+    const cur = swText.match(/baggo-shell-v(\d+)/);
+    const oldCache = cur[0], newCache = "baggo-shell-v" + (Number(cur[1]) + 1);
+    fs.writeFileSync(swPath, swText.split(oldCache).join(newCache));
     await p.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
 
     // the "Updated" toast appears, then the page reloads onto the new version
     await p.getByText("Updated to the latest version.").waitFor({ timeout: 8000 });
     await p.waitForTimeout(1800);
     const activeCache = await p.evaluate(async () => (await caches.keys()).filter((k) => k.indexOf("baggo-shell") === 0));
-    assert.ok(activeCache.includes("baggo-shell-v5") && !activeCache.includes("baggo-shell-v4"), "new cache active, old cache cleaned: " + JSON.stringify(activeCache));
+    assert.ok(activeCache.includes(newCache) && !activeCache.includes(oldCache), "new cache active, old cache cleaned: " + JSON.stringify(activeCache));
 
     // offline boot still works after the update
     await ctx.setOffline(true);
@@ -166,6 +173,58 @@ const assert = require("assert");
     await ctx.close();
     await new Promise((r) => srv.close(r));
     fs.rmSync(pub, { recursive: true, force: true });
+  });
+
+  // Journey 1: first open → first tick, no account, offline, nothing sent anywhere.
+  await test("guest Journey 1: plan a trip and tick an item offline in <=6 taps, no network", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const pg = await ctx.newPage();
+    let taps = 0;
+    pg.on("console", () => {});
+    // record any data-bearing API calls (there must be none in the guest flow)
+    const sent = [];
+    pg.on("request", (r) => { const u = r.url(); if (/\/api\/(data|trips|signup|login|groups|family)/.test(u)) sent.push(r.method() + " " + u.replace(/^https?:\/\/[^/]+/, "")); });
+
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+
+    // go offline for the whole journey — guest mode must work with no network
+    await ctx.setOffline(true);
+
+    const tap = async (loc) => { taps++; await loc.click(); };
+    await tap(pg.getByRole("button", { name: "Plan a trip" }));            // 1
+    await pg.getByRole("heading", { name: "Plan a trip" }).waitFor({ timeout: 8000 });
+    await pg.getByLabel("Trip name").fill("Weekend in Lisbon");            // typing (not a tap)
+    await tap(pg.getByRole("radio", { name: /Solo — domestic/ }));         // 2 (profile)
+    await tap(pg.getByRole("checkbox", { name: /Work trip/ }));            // 3 (drop a starter list)
+    await tap(pg.getByRole("button", { name: "Create trip" }));           // 4
+    await pg.getByRole("heading", { name: "Weekend in Lisbon" }).waitFor({ timeout: 8000 });
+    // tick the first item
+    const firstCheck = pg.getByRole("checkbox").first();
+    await tap(firstCheck);                                                 // 5
+    await pg.waitForFunction(() => document.querySelectorAll('[role="checkbox"][aria-checked="true"]').length > 0, null, { timeout: 8000 });
+
+    assert.ok(taps <= 6, "took " + taps + " taps (<= 6)");
+    assert.equal(sent.length, 0, "nothing was sent: " + JSON.stringify(sent));
+
+    // it's on the device: a trip with lists and one packed item, stored under the guest owner
+    const stored = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo");
+      const db = await new Promise((res) => { req.onsuccess = () => res(req.result); });
+      const all = await new Promise((res) => { const r = db.transaction("trips").objectStore("trips").getAll(); r.onsuccess = () => res(r.result); });
+      const guest = all.filter((x) => x._owner === "guest").map((x) => x.trip);
+      const packed = guest.flatMap((t) => t.lists).flatMap((l) => l.items).filter((i) => i.state === "packed").length;
+      return { trips: guest.length, lists: guest[0] ? guest[0].lists.length : 0, name: guest[0] && guest[0].name, packed };
+    });
+    assert.equal(stored.trips, 1, "one guest trip on device");
+    assert.ok(stored.lists >= 2 && stored.name === "Weekend in Lisbon", "trip has lists: " + JSON.stringify(stored));
+    assert.ok(stored.packed >= 1, "an item is packed");
+
+    // survives an offline reload (local-first)
+    await pg.reload({ waitUntil: "domcontentloaded" });
+    await pg.getByRole("heading", { name: "Weekend in Lisbon" }).waitFor({ timeout: 8000 });
+
+    await ctx.close();
   });
 
   await browser.close();

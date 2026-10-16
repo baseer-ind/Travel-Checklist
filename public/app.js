@@ -399,6 +399,7 @@
     card.appendChild(form);
     card.appendChild(el("p", "fine", authMode === "signup" ? "Your family and the admin can see your lists, except items you mark 🙈 private." : "Forgot your password? Ask the admin to reset it for you."));
     var sc = el("div", "list-tools"); sc.style.justifyContent = "center"; sc.appendChild(btn("link", "👀 Have a sharing code? View a list", askSharedCode)); card.appendChild(sc);
+    var gl = el("div", "list-tools"); gl.style.justifyContent = "center"; gl.appendChild(btn("link", "← Continue without an account", function () { enterGuest(); })); card.appendChild(gl);
     main.appendChild(card); renderSide(); setTimeout(function () { var f = document.activeElement; if (!f || f === document.body) name.input.focus(); }, 30);
   }
   function renderMustChange() {
@@ -1004,7 +1005,11 @@
   }
 
   function render() {
-    if (!user) { S = dirty ? S : null; if (shared) return renderSharedGuest(); return renderAuth(); }
+    if (!user) {
+      if (shared) return renderSharedGuest();
+      if (guestMode) return renderGuest();
+      return renderAuth();
+    }
     if (view === "mustchange") return renderMustChange();
     document.body.className = "";
     if (!S) { $("main").innerHTML = '<p class="sub loading">Loading…</p>'; return; }
@@ -1016,7 +1021,7 @@
   api("GET", "/api/me").then(function (r) {
     cfg.signupEnabled = !!r.signupEnabled; user = r.user;
     var qc = null; try { var sp = new URLSearchParams(location.search); qc = sp.get("code"); pendingGroup = sp.get("group"); } catch (e) { }
-    var first = user ? afterLogin() : Promise.resolve(render());
+    var first = user ? afterLogin() : enterGuest();   // no account → guest-first (works offline)
     return first.then(function () { if (qc) return openShared(qc); });
   }).catch(function (e) {
     // Offline or server down: if this device has a signed-in session and cached trips, boot anyway.
@@ -1026,7 +1031,7 @@
   function bootOffline(e) {
     if (!window.BaggoDB) return showBootError(e);
     return BaggoDB.getSession().then(function (sess) {
-      if (!sess) return showBootError(e);
+      if (!sess) return enterGuest();   // never signed in → guest works offline from first open
       return BaggoDB.loadState(sess.key).then(function (local) {
         if (!local || !local.trips || !local.trips.length) return showBootError(e);
         user = { username: sess.username, key: sess.key, role: sess.role, mustChange: false };
@@ -1043,6 +1048,256 @@
     $("main").innerHTML = ""; var c = el("div", "auth"); c.appendChild(el("div", "big", "😕")); c.appendChild(el("h1", null, "Can't load right now"));
     c.appendChild(el("p", "sub", errText(e))); c.appendChild(btn("btn full", "Try again", function () { location.reload(); })); $("main").appendChild(c);
   }
+
+  /* ================= guest mode (v2 · Journey 1) =================
+     No account, no network needed. Trips live on the device (IndexedDB, owner "guest");
+     nothing is sent anywhere. Signing in (v1) is one tap away for family/groups. */
+  var GUEST = "guest", guestMode = false, gview = "welcome", gform = null, gcat = "all";
+  var PROFILES = [
+    ["family", "Family", "One organiser plus the family, each on their own phone"],
+    ["pilgrimage", "Pilgrimage / religious group", "A jamaat, Umrah or church trip with a coordinator"],
+    ["solo_dom", "Solo — domestic", "A quick trip at home; reuse last time"],
+    ["solo_int", "Solo — international", "First or occasional international travel"],
+  ];
+  // starter lists: [name, emoji, kind, [[emoji, name, qty?, mustNotForget?], ...]]
+  var UNIVERSAL = [
+    ["Documents", "🛂", "documents", [["🛂", "Passport / ID", 1, true], ["🎟️", "Tickets & bookings"], ["💳", "Wallet & cards"], ["💵", "Cash / local currency"]]],
+    ["Packing basics", "🎒", "packing", [["👕", "Clothes"], ["🩲", "Underwear & socks"], ["🪥", "Toothbrush & toothpaste"], ["🔌", "Phone charger", 1, true], ["💊", "Medicines"]]],
+    ["Before you leave", "🔑", "leave", [["🔑", "Lock doors & windows"], ["🔌", "Unplug appliances"], ["🔥", "Turn off the gas"], ["🪪", "Passport / ID & tickets", 1, true]]],
+  ];
+  var STARTERS = {
+    family: [
+      ["Family packing", "👨‍👩‍👧", "packing", [["👕", "Clothes for everyone"], ["🧥", "Jackets"], ["🩲", "Underwear & socks"], ["🪥", "Toiletries bag"], ["💊", "Medicines"]]],
+      ["Kids", "🧸", "packing", [["🍼", "Snacks & bottles"], ["🧸", "Comfort toy"], ["🩹", "Plasters"], ["👶", "Spare clothes"], ["🎧", "Headphones"]]],
+      ["Documents", "🛂", "documents", [["🛂", "Passports / IDs", 1, true], ["🎟️", "Tickets & bookings"], ["💳", "Wallet & cards"]]],
+      ["Home", "🏠", "home", [["🪴", "Water the plants"], ["🗑️", "Take out the trash"], ["🔌", "Unplug appliances"], ["🐱", "Arrange pet care"]]],
+      ["Before you leave", "🔑", "leave", [["🔑", "Lock up"], ["🔥", "Turn off the gas"], ["🚰", "Turn off taps"]]],
+    ],
+    pilgrimage: [
+      ["Essentials", "📋", "packing", [["🪪", "ID card", 1, true], ["👝", "Pouch / belt bag"], ["💧", "Water bottle"], ["📿", "Prayer items"]]],
+      ["Modesty & prayer", "🧕", "packing", [["🧕", "Modest clothing"], ["🧦", "Extra socks"], ["🧴", "Travel prayer mat"], ["🧣", "Scarf / shawl"]]],
+      ["Long journey", "🚌", "custom", [["🍿", "Snacks for the journey"], ["🎧", "Headphones"], ["🔌", "Power bank", 1, true], ["💊", "Travel-sickness tablets"]]],
+      ["Documents", "🛂", "documents", [["🛂", "Passport / ID", 1, true], ["🎟️", "Group booking reference"], ["💳", "Cash & cards"]]],
+    ],
+    solo_dom: [
+      ["Weekend bag", "🎒", "packing", [["👕", "T-shirts", 2], ["🩲", "Underwear", 2], ["🧦", "Socks", 2], ["🪥", "Toothbrush & toothpaste"], ["🔌", "Phone charger", 1, true]]],
+      ["Work trip", "💼", "packing", [["👔", "Smart outfit"], ["💻", "Laptop & charger", 1, true], ["🪪", "Work ID"]]],
+      ["Before you leave", "🔑", "leave", [["🔑", "Lock up"], ["🔌", "Unplug"], ["🗑️", "Trash out"]]],
+    ],
+    solo_int: [
+      ["International documents", "🛂", "documents", [["🛂", "Passport", 1, true], ["📄", "Check: visa / entry rules"], ["💉", "Check: vaccinations needed"], ["🧾", "Travel insurance"]]],
+      ["Money", "💳", "money", [["💳", "Backup bank card", 1, true], ["💵", "Some local currency"], ["📱", "Banking app set up"]]],
+      ["Digital readiness", "📱", "digital", [["📲", "Offline maps downloaded"], ["🔌", "Plug adapter"], ["🔋", "Power bank"], ["☁️", "Docs saved offline"]]],
+      ["Packing basics", "🎒", "packing", [["👕", "Clothes"], ["🪥", "Toiletries"], ["💊", "Medicines"]]],
+    ],
+  };
+  function gsvg(d, w) { var s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("width", 18); s.setAttribute("height", 18); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", w || 2); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true"); var pth = document.createElementNS("http://www.w3.org/2000/svg", "path"); pth.setAttribute("d", d); s.appendChild(pth); return s; }
+  var G = { tick: "M5 12.5 10 17.5 19 7", skip: "M18 6 6 18", star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.6 1-5.8L3.5 9.7l5.9-.9z", back: "M15 6l-6 6 6 6", plus: "M12 5v14M5 12h14", home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z", bag: "M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" };
+
+  function enterGuest() {
+    guestMode = true; user = null; gcat = "all";
+    var load = (window.BaggoDB ? BaggoDB.loadState(GUEST) : Promise.resolve(null)).catch(function () { return null; });
+    return load.then(function (local) {
+      if (local && local.trips && local.trips.length) { S = local; gFix(); gview = S.curTrip ? "trip" : "home"; }
+      else { S = emptyState(); gview = "welcome"; }
+      renderGuest();
+    });
+  }
+  function gFix() {
+    if (!S) return;
+    if (!S.trips.some(function (t) { return t.id === S.curTrip; })) { var last = S.trips[S.trips.length - 1]; S.curTrip = last ? last.id : null; }
+    var ct = S.trips.filter(function (t) { return t.id === S.curTrip; })[0];
+    if (ct && !ct.lists.some(function (l) { return l.id === S.curList; })) S.curList = ct.lists[0] ? ct.lists[0].id : null;
+  }
+  function guestPersist() { if (window.BaggoDB) BaggoDB.saveState(GUEST, S); }
+  function gTrip() { return S && S.trips.filter(function (t) { return t.id === S.curTrip; })[0] || null; }
+  function gGo(v, extra) { gview = v; if (extra) { if ("cat" in extra) gcat = extra.cat; } renderGuest(); var m = $("main"); if (m) m.scrollTop = 0; }
+  function guestSignIn() { guestMode = false; gform = null; expiredMsg = null; render(); }
+
+  function gCounts(t) { var p = 0, n = 0; t.lists.forEach(function (l) { l.items.forEach(function (i) { if (i.state === "packed") { p++; n++; } else if (i.state === "todo") n++; }); }); return { packed: p, need: n, pct: n ? Math.round(p / n * 100) : 0 }; }
+
+  function gCreateTrip() {
+    var f = gform;
+    if (!f.name.trim()) { f.err = "Give your trip a name."; return renderGuest(); }
+    var src = f.profile ? STARTERS[f.profile] : UNIVERSAL;
+    var lists = src.filter(function (t) { return f.pick[t[0]] !== false; }).map(function (t) {
+      return { id: nid(), name: t[0], emoji: t[1], kind: t[2], items: t[3].map(function (it) { var o = { id: nid(), emoji: it[0], name: it[1], state: "todo" }; if (it[2]) o.qty = it[2]; if (it[3]) o.mnf = true; return o; }) };
+    });
+    if (!lists.length) lists = [{ id: nid(), name: "Packing", emoji: "🎒", kind: "packing", items: [] }];
+    var start = f.noDates ? null : (f.start || null);
+    var trip = { id: nid(), name: f.name.trim(), created: Date.now(), packedAt: null, start: start, end: f.noDates ? null : (f.end || null), travelDate: start, profile: f.profile || null, lists: lists };
+    S.trips.push(trip); S.curTrip = trip.id; S.curList = lists[0].id; gform = null; gcat = "all";
+    guestPersist(); gGo("trip");
+    toast("Trip created on this device.");
+  }
+  function gToggleItem(listId, id) {
+    var t = gTrip(); if (!t) return; var l = t.lists.filter(function (x) { return x.id === listId; })[0]; if (!l) return;
+    var it = l.items.filter(function (i) { return i.id === id; })[0]; if (!it) return;
+    it.state = it.state === "packed" ? "todo" : "packed"; if (it.state !== "packed") t.packedAt = null;
+    guestPersist(); renderGuest();
+  }
+  function gSkipItem(listId, id) {
+    var t = gTrip(); if (!t) return; var l = t.lists.filter(function (x) { return x.id === listId; })[0]; if (!l) return;
+    var it = l.items.filter(function (i) { return i.id === id; })[0]; if (!it) return;
+    it.state = it.state === "skip" ? "todo" : "skip"; guestPersist(); renderGuest();
+  }
+  function gAddItem(listId, name) {
+    var t = gTrip(); if (!t) return; var l = t.lists.filter(function (x) { return x.id === listId; })[0]; if (!l) return;
+    l.items.push({ id: nid(), emoji: "🧳", name: name, state: "todo" }); t.packedAt = null; guestPersist(); renderGuest();
+  }
+
+  function renderGuest() {
+    if (gview === "new") return renderGNew();
+    if (gview === "trip" && gTrip()) return renderGTrip();
+    if (S && S.trips.length) return renderGHome();
+    return renderGWelcome();
+  }
+  function gShell(hasTabs) {
+    document.body.className = "v2";
+    var main = $("main"); main.innerHTML = ""; main.className = "main v2";
+    var wrap = el("div", "v2-wrap"); main.appendChild(wrap);
+    if (hasTabs) wrap.style.paddingBottom = "96px";
+    return wrap;
+  }
+  function gBrand(wrap, withSignIn) {
+    var top = el("div", "v2-top");
+    var brand = el("div", "v2-brand"); brand.appendChild(el("span", "dot")); brand.appendChild(document.createTextNode("Baggo")); top.appendChild(brand);
+    if (withSignIn) top.appendChild(btn("v2-link", "Sign in", guestSignIn));
+    wrap.appendChild(top); return top;
+  }
+  function gTabbar() {
+    var bar = el("nav", "v2-tabbar"); bar.setAttribute("aria-label", "Main");
+    [["home", "Home", G.home], ["trips", "Trips", G.bag]].forEach(function (x) {
+      var on = (x[0] === "trips") ? gview === "home" : gview === "trip";
+      var b = el("button"); b.type = "button"; if ((x[0] === "home" && gview === "trip") || (x[0] === "trips" && gview === "home")) b.setAttribute("aria-current", "page");
+      var pill = el("span", "pill"); pill.appendChild(gsvg(x[2])); b.appendChild(pill); b.appendChild(el("span", null, x[1]));
+      b.addEventListener("click", function () { gGo(x[0] === "home" ? (gTrip() ? "trip" : "home") : "home"); });
+      bar.appendChild(b);
+    });
+    return bar;
+  }
+  function renderGWelcome() {
+    var wrap = gShell(false); gBrand(wrap, true);
+    var hero = el("div", "v2-empty"); hero.style.paddingTop = "32px";
+    var icon = el("span"); icon.style.cssText = "width:56px;height:56px;border-radius:16px;background:var(--together-bg);color:var(--together-fg);display:flex;align-items:center;justify-content:center"; var big = gsvg(G.bag, 2); big.setAttribute("width", 28); big.setAttribute("height", 28); icon.appendChild(big); hero.appendChild(icon);
+    hero.appendChild(el("h1", "v2-h1", "Pack for your next trip, together."));
+    hero.appendChild(el("p", "v2-sub", "Make a list for anything, see who's ready, and never forget the charger again. No account needed to start, and it all works offline."));
+    var row = el("div"); row.style.cssText = "display:flex;flex-direction:column;gap:10px;width:100%;margin-top:8px";
+    row.appendChild(btn("v2-btn full", "Plan a trip", function () { gform = { name: "", start: "", end: "", noDates: false, profile: null, pick: {}, err: "" }; gGo("new"); }));
+    row.appendChild(btn("v2-btn sec full", "Try a sample trip", gSampleTrip));
+    hero.appendChild(row); wrap.appendChild(hero);
+  }
+  function gSampleTrip() {
+    gform = { name: "Weekend in Lisbon", start: "", end: "", noDates: true, profile: "solo_dom", pick: {}, err: "" };
+    gCreateTrip();
+  }
+  function renderGNew() {
+    var f = gform; var wrap = gShell(false);
+    var top = gBrand(wrap, false); top.insertBefore(btnIcon(G.back, "Back", function () { gform = null; gGo(S.trips.length ? "home" : "welcome"); }), top.firstChild);
+    wrap.appendChild(el("h1", "v2-h1", "Plan a trip"));
+    // name
+    var nameF = el("label", "v2-field"); nameF.appendChild(el("span", null, "Trip name"));
+    var nameI = el("input", "v2-input"); nameI.value = f.name; nameI.placeholder = "e.g. Weekend in Lisbon"; nameI.setAttribute("aria-label", "Trip name"); if (f.err) nameI.setAttribute("aria-invalid", "true");
+    nameI.addEventListener("input", function () { f.name = nameI.value; f.err = ""; });
+    nameF.appendChild(nameI); wrap.appendChild(nameF);
+    if (f.err) { var e = el("p", "v2-err", f.err); e.setAttribute("role", "alert"); wrap.appendChild(e); }
+    // dates
+    var datesF = el("div", "v2-field"); datesF.appendChild(el("span", null, "When?"));
+    var grid = el("div", "v2-dates");
+    var ds = el("input", "v2-input date"); ds.type = "date"; ds.value = f.start; ds.disabled = f.noDates; ds.setAttribute("aria-label", "Departure date"); ds.addEventListener("change", function () { f.start = ds.value; });
+    var de = el("input", "v2-input date"); de.type = "date"; de.value = f.end; de.disabled = f.noDates; de.setAttribute("aria-label", "Return date"); de.addEventListener("change", function () { f.end = de.value; });
+    grid.appendChild(ds); grid.appendChild(de); datesF.appendChild(grid);
+    var nd = el("label", "v2-checkline"); var ndi = document.createElement("input"); ndi.type = "checkbox"; ndi.checked = f.noDates; ndi.addEventListener("change", function () { f.noDates = ndi.checked; renderGNew(); }); nd.appendChild(ndi); nd.appendChild(document.createTextNode("I don't know my dates yet")); datesF.appendChild(nd);
+    wrap.appendChild(datesF);
+    // profile
+    var who = el("div", "v2-field"); who.appendChild(el("span", null, "Who's going?"));
+    var choices = el("div", "v2-choices"); choices.setAttribute("role", "radiogroup"); choices.setAttribute("aria-label", "Who's going");
+    PROFILES.forEach(function (p) {
+      var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.profile === p[0] ? "true" : "false");
+      var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
+      var ct = el("span", "ct"); ct.appendChild(el("b", null, p[1])); ct.appendChild(el("small", null, p[2])); b.appendChild(ct);
+      b.addEventListener("click", function () { f.profile = p[0]; f.pick = {}; renderGNew(); });
+      choices.appendChild(b);
+    });
+    who.appendChild(choices); wrap.appendChild(who);
+    // starter lists for the chosen profile (pre-selected; tap to drop)
+    var src = f.profile ? STARTERS[f.profile] : UNIVERSAL;
+    var sl = el("div", "v2-field");
+    sl.appendChild(el("span", null, f.profile ? "Starter lists" : "We'll add three basics"));
+    sl.appendChild(el("p", "v2-sub", "Tick what to add — nothing is added without you."));
+    var box = el("div"); box.style.cssText = "display:flex;flex-direction:column;gap:8px";
+    src.forEach(function (t) {
+      var on = f.pick[t[0]] !== false;
+      var b = el("button", "v2-starter"); b.type = "button"; b.setAttribute("role", "checkbox"); b.setAttribute("aria-checked", on ? "true" : "false");
+      var bx = el("span", "box"); if (on) bx.appendChild(gsvg(G.tick, 3)); b.appendChild(bx);
+      var st = el("span", "st"); st.appendChild(el("b", null, t[1] + "  " + t[0])); st.appendChild(el("small", null, t[3].length + " items")); b.appendChild(st);
+      b.addEventListener("click", function () { f.pick[t[0]] = (f.pick[t[0]] === false); renderGNew(); });
+      box.appendChild(b);
+    });
+    sl.appendChild(box); wrap.appendChild(sl);
+    wrap.appendChild(btn("v2-btn full", "Create trip", gCreateTrip));
+  }
+  function renderGHome() {
+    var wrap = gShell(true); gBrand(wrap, true);
+    wrap.appendChild(el("div", "v2-kicker", "Your trips"));
+    S.trips.forEach(function (t) {
+      var c = gCounts(t); var card = el("button", "v2-trip"); card.type = "button";
+      card.appendChild(el("div", "tn", t.name));
+      card.appendChild(el("div", "td", (t.start ? t.start : "No dates yet") + " · " + c.packed + "/" + c.need + " packed"));
+      var pr = el("div", "v2-progress"); pr.style.marginTop = "10px"; var fi = el("i"); fi.style.width = c.pct + "%"; pr.appendChild(fi); card.appendChild(pr);
+      card.addEventListener("click", function () { S.curTrip = t.id; gFix(); gcat = "all"; guestPersist(); gGo("trip"); });
+      wrap.appendChild(card);
+    });
+    wrap.appendChild(btn("v2-btn sec full", "Plan another trip", function () { gform = { name: "", start: "", end: "", noDates: false, profile: null, pick: {}, err: "" }; gGo("new"); }));
+    $("main").appendChild(gTabbar());
+  }
+  function renderGTrip() {
+    var t = gTrip(); var wrap = gShell(true); var top = gBrand(wrap, true);
+    top.insertBefore(btnIcon(G.back, "All trips", function () { gGo("home"); }), top.firstChild);
+    wrap.appendChild(el("h1", "v2-h1", t.name));
+    var c = gCounts(t);
+    var sub = el("div", "v2-meta"); sub.textContent = (t.start || "No dates yet") + " · " + c.packed + " of " + c.need + " packed"; wrap.appendChild(sub);
+    var pr = el("div", "v2-progress"); pr.setAttribute("role", "progressbar"); pr.setAttribute("aria-valuemin", "0"); pr.setAttribute("aria-valuemax", String(c.need)); pr.setAttribute("aria-valuenow", String(c.packed)); var fi = el("i"); fi.style.width = c.pct + "%"; pr.appendChild(fi); wrap.appendChild(pr);
+    // list tabs
+    var tabs = el("div", "v2-listtabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Lists");
+    var mk = function (id, label, count) { var b = el("button", "v2-tab"); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", gcat === id ? "true" : "false"); b.appendChild(document.createTextNode(label)); if (count != null) { var cc = el("span", "c", count); b.appendChild(cc); } b.addEventListener("click", function () { gcat = id; renderGuest(); }); return b; };
+    tabs.appendChild(mk("all", "All"));
+    t.lists.forEach(function (l) { var lc = l.items.filter(function (i) { return i.state === "packed"; }).length; tabs.appendChild(mk(l.id, (l.emoji ? l.emoji + " " : "") + l.name, lc + "/" + l.items.length)); });
+    wrap.appendChild(tabs);
+    // items
+    var lists = gcat === "all" ? t.lists : t.lists.filter(function (l) { return l.id === gcat; });
+    lists.forEach(function (l) {
+      if (gcat === "all") { var h = el("div", "v2-listhead"); h.style.marginTop = "6px"; h.appendChild(el("h2", "v2-h2", (l.emoji ? l.emoji + " " : "") + l.name)); wrap.appendChild(h); }
+      var ul = el("ul", "v2-rows"); ul.setAttribute("aria-label", l.name);
+      if (!l.items.length) { var li0 = el("li"); li0.style.cssText = "background:var(--bg);padding:14px 16px;color:var(--slate);font-size:14px"; li0.textContent = "Nothing here yet."; ul.appendChild(li0); }
+      l.items.forEach(function (it) {
+        var li = el("li", "v2-item" + (it.state === "packed" ? " done" : it.state === "skip" ? " skip" : ""));
+        var chk = el("button", "v2-check"); chk.type = "button"; chk.setAttribute("role", "checkbox"); chk.setAttribute("aria-checked", it.state === "packed" ? "true" : "false"); chk.setAttribute("aria-label", (it.state === "packed" ? "Packed: " : "Pack: ") + it.name);
+        var bx = el("span", "box"); if (it.state === "packed") bx.appendChild(gsvg(G.tick, 3)); chk.appendChild(bx);
+        chk.addEventListener("click", function () { gToggleItem(l.id, it.id); });
+        var lab = el("button", "label"); lab.type = "button"; lab.setAttribute("aria-label", it.name);
+        if (it.mnf) { var st = el("span", "star"); st.setAttribute("aria-label", "Must not forget"); st.appendChild(gsvg(G.star, 1.6)); lab.appendChild(st); }
+        if (it.emoji) lab.appendChild(el("span", "emoji", it.emoji));
+        lab.appendChild(el("span", "nm", it.name));
+        if (it.qty && it.qty > 1) lab.appendChild(el("span", "qty", "×" + it.qty));
+        var skip = el("button", "v2-skip"); skip.type = "button"; skip.setAttribute("aria-pressed", it.state === "skip" ? "true" : "false"); skip.setAttribute("aria-label", "Not needed: " + it.name); skip.title = "Not needed"; skip.appendChild(gsvg(G.skip));
+        skip.addEventListener("click", function () { gSkipItem(l.id, it.id); });
+        li.appendChild(chk); li.appendChild(lab); li.appendChild(skip); ul.appendChild(li);
+      });
+      wrap.appendChild(ul);
+    });
+    // quick add (to the current list, or the first list when on "All")
+    var target = gcat === "all" ? t.lists[0] : t.lists.filter(function (l) { return l.id === gcat; })[0];
+    if (target) {
+      var form = document.createElement("form"); form.className = "v2-add";
+      var inp = el("input", "v2-input"); inp.id = "gNewItem"; inp.maxLength = 80; inp.autocomplete = "off"; inp.placeholder = "Add to " + target.name + "…"; inp.setAttribute("aria-label", "New item");
+      form.appendChild(inp); var add = el("button", "v2-btn", "Add"); add.type = "submit"; form.appendChild(add);
+      form.addEventListener("submit", function (ev) { ev.preventDefault(); var v = inp.value.trim(); if (!v) { inp.focus(); return; } inp.value = ""; gAddItem(target.id, v); var n = $("gNewItem"); if (n) n.focus(); });
+      wrap.appendChild(form);
+    }
+    $("main").appendChild(gTabbar());
+  }
+  function btnIcon(d, label, fn) { var b = el("button", "v2-link"); b.type = "button"; b.setAttribute("aria-label", label); b.style.cssText = "display:flex;align-items:center;padding:10px 8px 10px 0"; b.appendChild(gsvg(d)); if (fn) b.addEventListener("click", fn); return b; }
 
   /* ================= service worker ================= */
   function registerSW() {
