@@ -333,6 +333,69 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
+  // Together / migration: a guest's local trips move into the account on sign-in — nothing lost, private flag preserved.
+  await test("guest -> account migration: trips move in, sync, private flag preserved", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    // guest makes a trip
+    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await pg.getByLabel("Trip name").fill("Secret getaway");
+    await pg.getByRole("radio", { name: /Solo — domestic/ }).click();
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.locator("#main h1", { hasText: "Secret getaway" }).first().waitFor({ timeout: 8000 });
+    // mark one item private in the guest store (the guest UI has no private toggle yet; migration must still preserve the flag)
+    const marked = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const tx = db.transaction("trips", "readwrite"); const st = tx.objectStore("trips");
+      const all = await new Promise((r) => { const q = st.getAll(); q.onsuccess = () => r(q.result); });
+      const rec = all.find((x) => x._owner === "guest"); const it = rec.trip.lists[0].items[0];
+      it.hidden = true; const name = it.name; st.put(rec);
+      await new Promise((r) => { tx.oncomplete = r; });
+      return name;
+    });
+
+    // sign in (create an account) via the Together tab
+    await pg.getByLabel("Main").getByRole("button", { name: "Together" }).click();
+    await pg.getByRole("button", { name: "Create an account" }).click();
+    await pg.getByRole("tab", { name: "Create account" }).click();
+    await pg.locator("#aName").fill("Mover"); await pg.locator("#aPass").fill("secret1"); await pg.locator("#aCode").fill("family");
+    await pg.getByRole("button", { name: "Create my account" }).click();
+    // migration toast + landing in the (v1) signed-in app with the trip present
+    await pg.getByText(/added to your account/).waitFor({ timeout: 8000 });
+    await pg.getByText("✓ Saved").waitFor({ timeout: 10000 });
+
+    // the trip is in the account on the SERVER, with every item (nothing lost) and the private flag kept
+    const srv = await pg.evaluate(async () => (await fetch("/api/data", { credentials: "same-origin" }).then((r) => r.json())));
+    const trip = srv.data.trips.find((t) => t.name === "Secret getaway");
+    assert.ok(trip, "migrated trip is on the server");
+    const items = trip.lists.flatMap((l) => l.items);
+    assert.ok(items.length >= 5, "all items migrated (nothing lost): " + items.length);
+    assert.ok(items.some((i) => i.name === marked && i.hidden === true), "private flag preserved on the migrated item");
+
+    // a family member must NOT see the private item (privacy holds through migration)
+    const mate = await browser.newContext();
+    const mp = await mate.newPage();
+    await mp.goto(base + "/", { waitUntil: "networkidle" });
+    await mp.getByRole("button", { name: "Sign in" }).click();
+    await mp.getByRole("tab", { name: "Create account" }).click();
+    await mp.locator("#aName").fill("Mate"); await mp.locator("#aPass").fill("secret2"); await mp.locator("#aCode").fill("family");
+    await mp.getByRole("button", { name: "Create my account" }).click();
+    await mp.waitForTimeout(500);
+    const famView = await mp.evaluate(async () => JSON.stringify(await fetch("/api/family/mover", { credentials: "same-origin" }).then((r) => r.json())));
+    assert.ok(famView.includes("Secret getaway"), "family can see the shared trip");
+    assert.ok(!famView.includes(marked), "family cannot see the private item: " + marked);
+
+    // the guest store is cleared (no duplication)
+    const guestLeft = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      return all.filter((x) => x._owner === "guest").length;
+    });
+    assert.equal(guestLeft, 0, "guest store cleared after migration");
+    await mate.close(); await ctx.close();
+  });
+
   await browser.close();
   await new Promise((r) => server.close(r));
   console.log("\n" + passed + " passed, " + failed + " failed");
