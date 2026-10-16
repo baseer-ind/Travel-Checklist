@@ -429,22 +429,33 @@
 
   function afterLogin() {
     if (user.mustChange) { view = "mustchange"; render(); return Promise.resolve(); }
-    view = "app"; offlineBoot = false;
+    view = "app"; offlineBoot = false; guestMode = false;
     if (window.BaggoDB) BaggoDB.setSession({ key: user.key, username: user.username, role: user.role });
     family = null; unread = 0; groups = null; toasted = {}; setTimeout(pollUnread, 800); setTimeout(loadGroups, 600);
     configureSync();
     // Local-first: show trips cached on this device immediately, then the sync engine reconciles.
     var loadLocal = (window.BaggoDB ? BaggoDB.loadState(user.key) : Promise.resolve(null)).catch(function () { return null; });
+    var loadGuest = (window.BaggoDB ? BaggoDB.loadState(GUEST) : Promise.resolve(null)).catch(function () { return null; });
     var loadMeta = (window.BaggoSync ? BaggoSync.loadMeta() : Promise.resolve());
-    return Promise.all([loadLocal, loadMeta]).then(function (res) {
-      var local = res[0];
+    return Promise.all([loadLocal, loadMeta, loadGuest]).then(function (res) {
+      var local = res[0], guest = res[2];
       lastKey = user.key;
-      if (local && local.trips && local.trips.length) S = normalize(local);
-      else if (!S) S = emptyState();
+      // Build from the account's own stored data (not any carried-over guest state in memory).
+      S = (local && local.trips && local.trips.length) ? normalize(local) : emptyState();
+      // Move any trips made as a guest into this account, so "sign in" / "connect a family" never
+      // loses them. Fields (including private flags, notes, quantities) are carried as-is; the trips
+      // are new to the account's sync meta, so the engine pushes them on the flush below.
+      var migrated = 0;
+      if (guest && guest.trips && guest.trips.length) {
+        var have = {}; S.trips.forEach(function (t) { have[t.id] = true; });
+        guest.trips.forEach(function (t) { if (!have[t.id]) { S.trips.push(t); migrated++; } });
+        if (migrated) { normalize(S); persistLocal(); if (window.BaggoDB) BaggoDB.wipeOwner(GUEST); }
+      }
       render();
       return flush().then(function () {
-        if (!S.trips.length) {
-          // brand-new account: seed the Qadian packing list (v1 behaviour; v2 makes this a template the user picks — see DECISIONS.md)
+        if (migrated) toast(migrated === 1 ? "Your trip was added to your account." : "Your " + migrated + " trips were added to your account.");
+        else if (!S.trips.length) {
+          // brand-new account with nothing to migrate: seed the Qadian packing list (v1 behaviour; v2 makes this a template the user picks — see DECISIONS.md)
           var t = mkTrip("Trip to Qadian", "qadian"); S.trips.push(t); S.curTrip = t.id; S.curList = t.lists[0].id;
           render(); touch();
         }
@@ -1093,7 +1104,7 @@
     ],
   };
   function gsvg(d, w) { var s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("width", 18); s.setAttribute("height", 18); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", w || 2); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true"); var pth = document.createElementNS("http://www.w3.org/2000/svg", "path"); pth.setAttribute("d", d); s.appendChild(pth); return s; }
-  var G = { tick: "M5 12.5 10 17.5 19 7", skip: "M18 6 6 18", star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.6 1-5.8L3.5 9.7l5.9-.9z", back: "M15 6l-6 6 6 6", plus: "M12 5v14M5 12h14", home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z", bag: "M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" };
+  var G = { tick: "M5 12.5 10 17.5 19 7", skip: "M18 6 6 18", star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.6 1-5.8L3.5 9.7l5.9-.9z", back: "M15 6l-6 6 6 6", plus: "M12 5v14M5 12h14", home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z", bag: "M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z", people: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20a7 7 0 0 1 14 0M17 11a3 3 0 1 0-1-5.8M22 20a7 7 0 0 0-5-6.7" };
 
   function enterGuest() {
     guestMode = true; user = null; gcat = "all";
@@ -1149,11 +1160,13 @@
 
   function renderGuest() {
     if (gview === "new") return renderGNew();
+    if (gview === "together") return renderGTogether();
     if (gview === "trips") return renderGTrips();
     if (gview === "trip" && gTrip()) return renderGTrip();
     if (gActive().length || (S && S.trips.length)) return renderGHome();
     return renderGWelcome();
   }
+  function guestCreateAccount() { authMode = "signup"; guestSignIn(); }
   function gActive() { return S ? S.trips.filter(function (t) { return !t.archived; }) : []; }
   function gArchived() { return S ? S.trips.filter(function (t) { return t.archived; }) : []; }
   function gDaysUntil(t) { return daysUntil({ travelDate: t.start }); }
@@ -1181,14 +1194,25 @@
   }
   function gTabbar() {
     var bar = el("nav", "v2-tabbar"); bar.setAttribute("aria-label", "Main");
-    [["home", "Home", G.home], ["trips", "Trips", G.bag]].forEach(function (x) {
-      var current = x[0] === "home" ? (gview === "home" || gview === "trip") : gview === "trips";
+    [["home", "Home", G.home], ["trips", "Trips", G.bag], ["together", "Together", G.people]].forEach(function (x) {
+      var current = x[0] === "home" ? (gview === "home" || gview === "trip") : gview === x[0];
       var b = el("button"); b.type = "button"; if (current) b.setAttribute("aria-current", "page");
       var pill = el("span", "pill"); pill.appendChild(gsvg(x[2])); b.appendChild(pill); b.appendChild(el("span", null, x[1]));
       b.addEventListener("click", function () { gGo(x[0]); });
       bar.appendChild(b);
     });
     return bar;
+  }
+  function renderGTogether() {
+    var wrap = gShell(true); gBrand(wrap, true);
+    var em = el("div", "v2-empty");
+    var icon = el("span"); icon.style.cssText = "width:56px;height:56px;border-radius:16px;background:var(--together-bg);color:var(--together-fg);display:flex;align-items:center;justify-content:center"; var big = gsvg(G.people, 2); big.setAttribute("width", 28); big.setAttribute("height", 28); icon.appendChild(big); em.appendChild(icon);
+    em.appendChild(el("h1", "v2-h1", "Pack together"));
+    em.appendChild(el("p", "v2-sub", "Create a free account to connect your family or group: see who's ready, share a list everyone packs from, and keep your own private items private. Your trips on this device move with you — nothing is lost."));
+    em.appendChild(btn("v2-btn full", "Create an account", guestCreateAccount));
+    em.appendChild(btn("v2-btn sec full", "I already have one — sign in", guestSignIn));
+    wrap.appendChild(em);
+    $("main").appendChild(gTabbar());
   }
   function renderGWelcome() {
     var wrap = gShell(false); gBrand(wrap, true);

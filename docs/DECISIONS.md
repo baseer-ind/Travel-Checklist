@@ -139,3 +139,16 @@ Before building more v2 screens: touch targets and the text floor are driven by 
 A first-ever visit used to reload once right after the SW installed, because `activate` called `self.clients.claim()` and taking over a page that loaded without a controller makes the browser reload it — landing a guest mid-create on Home. Fixed by **removing `clients.claim()`** from `sw.js` (old-cache cleanup kept): the worker now controls the next navigation instead, so there is no mid-task reload. Updates are unaffected — `registerSW` drives them via SKIP_WAITING + `controllerchange` once the page is controlled. The Journey-1 browser test runs with the SW **enabled** and asserts exactly one navigation (the initial load) through create-and-tick; the SW-update test establishes the controller with one reload before shipping v2.
 
 `npm test`: 36. `npm run test:browser`: 9.
+
+## 2026-10-16 — Together (guest state) + guest→account migration
+
+**Migration (the data-safety core).** On sign-in or sign-up, `afterLogin` loads the `"guest"` store and moves any guest trips into the account: it rebuilds `S` from the account's own stored data (not carried-over guest memory), adds guest trips not already present, persists locally, pushes them to the server via the sync engine (they are new to the account's sync meta, so they sync as normal), then **clears the guest store** so nothing is duplicated. All fields are carried as-is, including `hidden` (private), `note`, `qty` and `mnf`. A one-line toast confirms ("added to your account"). A subtle bug was fixed in the process: the in-memory guest `S` used to ride into the account silently (trip kept, but un-counted and the guest store left un-wiped); `afterLogin` now resets `S` from the account and migrates from the guest *store* explicitly.
+
+**Together screen.** The v2 guest tab bar now has three tabs (Home · Trips · Together). Together shows the section-E "no code yet" state for a guest — pack-together explainer and "Create an account" / "Sign in" — since family needs an account. The signed-in family view (members, who's ready, activity) remains the existing **v1** screen; rebuilding it in v2 is part of the larger signed-in v1→v2 work.
+
+**Test** (`tests/browser.test.js`): guest creates a trip (with one item marked private in the store), opens Together → creates an account; then the trip is on the server with **all** items (nothing lost) and the private flag preserved; a second family member's `/api/family` view shows the trip but **not** the private item; and the guest store is empty afterwards.
+
+`npm test`: 36. `npm run test:browser`: 10.
+
+### Still ahead
+The signed-in experience is still v1 (visual split during the build, to be removed before public launch per the user's directive). Remaining v2 screens: signed-in Home/Trip/Together, Member, Group list, Admin, Settings, Item sheet, Templates, plus applying "% ready" → "% packed" when the Together/Member v2 screens are built.
