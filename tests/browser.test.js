@@ -668,6 +668,25 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
+  // Settings (v2): export is offered, and self-service delete removes the account and returns to sign-in.
+  await test("Settings: export offered; delete account works and signs out", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    await signup(pg, "Goner", "secret1");
+    await pg.getByRole("button", { name: /Menu/ }).click();
+    await pg.getByRole("button", { name: "My account" }).click();
+    await pg.locator("#main h1", { hasText: "Account" }).first().waitFor({ timeout: 8000 });
+    assert.equal(await pg.getByRole("button", { name: /Export all my data/ }).count(), 1, "export is offered");
+    await a11y(pg, "Account (375px)");
+    await pg.getByRole("button", { name: "Delete my account" }).click();
+    await pg.getByRole("button", { name: "Delete everything" }).click();
+    // returns to the v2 sign-in screen, and the session is gone
+    await pg.getByRole("heading", { name: "Welcome back" }).waitFor({ timeout: 8000 });
+    const gone = await pg.evaluate(async () => (await fetch("/api/data", { credentials: "same-origin" })).status);
+    assert.equal(gone, 401, "account and session were removed");
+    await ctx.close();
+  });
+
   await browser.close();
   await new Promise((r) => server.close(r));
   console.log("\n" + passed + " passed, " + failed + " failed");

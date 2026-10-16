@@ -108,13 +108,6 @@
         return icon + " " + who + " " + verb + " " + e.emoji + " " + e.item + " · " + e.list + " · " + e.trip;
     }
   }
-  function renderFeed(parent, events, emptyText, fmt) {
-    fmt = fmt || feedLine;
-    if (!events || !events.length) { parent.appendChild(el("div", "empty", emptyText || "Nothing yet.")); return; }
-    var box = el("div", "feed");
-    events.forEach(function (e) { var r = el("div", "feedrow"); r.appendChild(el("span", "ftext", fmt(e))); r.appendChild(el("span", "when", ago(e.t))); box.appendChild(r); });
-    parent.appendChild(box);
-  }
   function dayWords(date) {
     var d = parseDay(date); if (!d) return "no date yet";
     var n = new Date(); n = new Date(n.getFullYear(), n.getMonth(), n.getDate()); var k = Math.round((d - n) / 86400000);
@@ -286,7 +279,6 @@
   }
 
   /* ================= countdown ================= */
-  var cdTimer = null;
   function parseDay(s) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ""); if (!m) return null; var d = new Date(+m[1], +m[2] - 1, +m[3]); return isNaN(d.getTime()) ? null : d; }
   function daysUntil(t) { var d = parseDay(t.travelDate); if (!d) return null; var n = new Date(); n = new Date(n.getFullYear(), n.getMonth(), n.getDate()); return Math.round((d - n) / 86400000); }
   function pad2(n) { return n < 10 ? "0" + n : "" + n; }
@@ -297,35 +289,6 @@
     });
   }
   function clearTravelDate() { var t = trip(); if (!t) return; t.travelDate = null; touch(); render(); }
-  function buildCountdown(t, tc, onSet, onClear) {
-    onSet = onSet || setTravelDate; onClear = onClear || clearTravelDate;
-    var box = el("section", "countdown"), d = parseDay(t.travelDate);
-    if (!d) {
-      var row = el("div", "cd-empty"); row.appendChild(el("span", null, "⏳ Counting down to your trip?"));
-      var b = btn("btn", "📅 Set travel date", onSet); b.style.padding = "10px 16px"; row.appendChild(b); box.appendChild(row); return box;
-    }
-    var top = el("div", "cd-top");
-    top.appendChild(el("span", "cd-date", "📅 " + d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "long", year: "numeric" })));
-    var bt = el("div", "cd-btns"); bt.appendChild(btn("link", "✏️ Change", onSet)); bt.appendChild(btn("link", "✕ Remove", onClear)); top.appendChild(bt); box.appendChild(top);
-    var grid = el("div", "cd-boxes"); grid.setAttribute("role", "timer"); var vals = {};
-    [["d", "Days"], ["h", "Hours"], ["m", "Mins"], ["s", "Secs"]].forEach(function (x) { var c = el("div", "cd-box"); var n = el("b", null, "0"); vals[x[0]] = n; c.appendChild(n); c.appendChild(el("span", null, x[1])); grid.appendChild(c); });
-    box.appendChild(grid);
-    var note = el("div", "cd-note"); box.appendChild(note);
-    function tick() {
-      var ms = d - new Date();
-      if (ms > 0) {
-        var s = Math.floor(ms / 1000), days = Math.floor(s / 86400);
-        vals.d.textContent = days; vals.h.textContent = pad2(Math.floor(s % 86400 / 3600)); vals.m.textContent = pad2(Math.floor(s % 3600 / 60)); vals.s.textContent = pad2(s % 60);
-        grid.style.display = "grid";
-        note.textContent = (days <= 3 && tc.t > 0) ? "🧳 " + tc.t + (tc.t === 1 ? " item" : " items") + " still to pack!" : (days === 0 ? "Tomorrow's the day! 🌟" : "");
-      } else if (ms > -86400000) { grid.style.display = "none"; note.textContent = "🎉 Today's the day! Safe travels! ✈️"; }
-      else { grid.style.display = "none"; note.textContent = "🧳 This trip date has passed. Set a new date for your next adventure!"; if (cdTimer) { clearInterval(cdTimer); cdTimer = null; } }
-    }
-    tick();
-    if (cdTimer) clearInterval(cdTimer);
-    cdTimer = setInterval(function () { if (!document.body.contains(grid)) { clearInterval(cdTimer); cdTimer = null; return; } tick(); }, 1000);
-    return box;
-  }
   // Design_1 live countdown for the v2 Trip (interactive: onSet/onClear) and Home card (opts.mini).
   // The 1-second tick stops itself once its grid leaves the DOM (screen change), so it never leaks.
   function v2Countdown(t, opts) {
@@ -373,16 +336,6 @@
   }
 
   /* ================= auth screens ================= */
-  function field(id, label, type, autocomplete) {
-    var w = el("label", "field"); w.setAttribute("for", id); w.appendChild(el("span", null, label));
-    var i = document.createElement("input"); i.id = id; i.type = type; i.autocomplete = autocomplete || "off"; i.setAttribute("autocapitalize", "none"); i.setAttribute("spellcheck", "false");
-    if (type === "text") i.maxLength = 40; if (type === "password") i.maxLength = 128;
-    w.appendChild(i); return { wrap: w, input: i };
-  }
-  function pwField(id, label, autocomplete) {
-    var f = field(id, label, "password", autocomplete); var row = el("div", "pwrow"); var show = btn("", "Show", function () { f.input.type = f.input.type === "password" ? "text" : "password"; show.textContent = f.input.type === "password" ? "Show" : "Hide"; });
-    show.setAttribute("aria-label", "Show or hide " + label.toLowerCase()); f.wrap.appendChild(row); row.appendChild(f.input); row.appendChild(show); return f;
-  }
   // v2 helpers for signed-out / form screens (brand bar, legal footer, password field, label field).
   function v2Brandbar(wrap) {
     var top = el("div", "v2-top");
@@ -546,96 +499,131 @@
   }
 
   /* ================= account + admin ================= */
-  function renderAccount(main) {
-    main.appendChild(el("h1", "pagetitle", "🔑 My account"));
-    var p = el("div", "panel"); p.appendChild(el("p", null, "Logged in as " + user.username + (user.role === "admin" ? " (admin)" : "")));
-    p.appendChild(el("h2", null, "Change password")); p.appendChild(passwordForm(false)); main.appendChild(p);
-    var o = el("div", "panel"); o.appendChild(btn("btn ghost", "Log out", logout)); main.appendChild(o);
+  function renderAccount() {
+    var wrap = gShell(false); appHeader(wrap, function () { appGo("home"); });
+    wrap.appendChild(el("h1", "v2-h1", "Account"));
+    wrap.appendChild(el("p", "v2-sub", "Signed in as " + user.username + (user.role === "admin" ? " · admin" : "")));
+    var pwCard = el("div", "v2-card"); pwCard.style.cssText = "display:flex;flex-direction:column;gap:12px";
+    pwCard.appendChild(el("h2", "v2-h2", "Change password")); pwCard.appendChild(passwordForm(false)); wrap.appendChild(pwCard);
+    var dataCard = el("div", "v2-card"); dataCard.style.cssText = "display:flex;flex-direction:column;gap:12px";
+    dataCard.appendChild(el("h2", "v2-h2", "Your data"));
+    dataCard.appendChild(el("p", "v2-sub", "Download everything you've created, or permanently delete your account and all of its data."));
+    dataCard.appendChild(btn("v2-btn sec full", "Export all my data (JSON)", exportData));
+    dataCard.appendChild(btn("v2-btn sec full v2-danger-btn", "Delete my account", deleteAccount));
+    wrap.appendChild(dataCard);
+    wrap.appendChild(btn("v2-btn sec full", "Log out", logout));
+  }
+  // Export all of the signed-in person's content as a JSON file (client-side; works offline).
+  function exportData() {
+    var payload = { app: "Baggo", exportedAt: new Date().toISOString(), account: { username: user.username }, trips: (S && S.trips) || [] };
+    try {
+      var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a"); a.href = url;
+      a.download = "baggo-" + String(user.username || "me").toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      toast("Your data was downloaded as JSON.");
+    } catch (e) { toast("Couldn't export on this device."); }
+  }
+  function deleteAccount() {
+    confirmBox("Delete your account?", "This permanently deletes your account and all your trips, lists and items. It can't be undone.", "Delete everything", function () {
+      api("DELETE", "/api/account").then(function () {
+        var key = user ? user.key : null;
+        if (window.BaggoSync) BaggoSync.reset();
+        if (window.BaggoDB) { if (key) BaggoDB.wipeOwner(key); BaggoDB.clearSession(); }
+        user = null; S = null; dirty = false; rev = 0; view = "app"; appView = "home"; closeAppMenu();
+        authMode = "login"; family = null; unread = 0; groups = null; curGroup = null; shared = null; sharePanel = null; toasted = {};
+        toast("Your account and all its data were deleted.");
+        render();
+      }).catch(function (e) { toast(errText(e)); });
+    });
   }
   function loadAdmin() {
     Promise.all([api("GET", "/api/admin/users"), api("GET", "/api/admin/feed"), api("GET", "/api/admin/overview"), api("GET", "/api/admin/groups")]).then(function (r) {
       adminUsers = r[0].users; adminFeed = r[1].events; adminTrips = r[2].trips; adminGroups = r[3].groups; if (view === "admin") render();
     }).catch(function (e) { if (e.status === 401) sessionExpired(); else { flash = { error: errText(e) }; render(); } });
   }
-  function showFlash(main) {
-    if (!flash) return;
-    var f = el("div", flash.error ? "err" : "flash"); f.setAttribute("role", "status");
-    if (flash.error) f.textContent = flash.error;
-    else {
-      f.appendChild(el("div", null, flash.title));
-      if (flash.user) { f.appendChild(document.createTextNode("Name: ")); f.appendChild(el("code", null, flash.user)); }
-      if (flash.password) {
-        f.appendChild(document.createTextNode(" Password: ")); f.appendChild(el("code", null, flash.password));
-        f.appendChild(btn("", "Copy", function () { var txt = (flash.user ? "Name: " + flash.user + "  " : "") + "Password: " + flash.password; try { navigator.clipboard.writeText(txt); } catch (e) { } }));
-        f.appendChild(el("div", null, "Share this with them. They'll be asked to choose their own password the first time they log in."));
-      }
+  function v2Bar(packed, need) {
+    var pct = need ? Math.round(packed / need * 100) : 0;
+    var pr = el("div", "v2-progress"); pr.setAttribute("role", "progressbar"); pr.setAttribute("aria-valuemin", "0"); pr.setAttribute("aria-valuemax", String(need)); pr.setAttribute("aria-valuenow", String(packed)); pr.setAttribute("aria-label", pct + "% packed");
+    var fi = document.createElement("i"); fi.style.width = pct + "%"; pr.appendChild(fi); return pr;
+  }
+  function renderAdmin() {
+    var wrap = gShell(false); appHeader(wrap, function () { appGo("home"); });
+    wrap.appendChild(el("h1", "v2-h1", "Admin"));
+    wrap.appendChild(el("p", "v2-sub", "Who's going where, who packed what, and everyone's accounts. Private items stay hidden."));
+    if (flash) {
+      var fb = el("div", "v2-alert " + (flash.error ? "bad" : "good"));
+      if (flash.error) fb.textContent = flash.error;
+      else { fb.appendChild(el("div", null, flash.title || "Done.")); if (flash.password) fb.appendChild(el("div", "v2-sub", "Temporary password: " + flash.password + " — copy it now, it won't be shown again.")); }
+      wrap.appendChild(fb);
     }
-    main.appendChild(f);
-  }
-  function tabsBar(items, cur, fn) {
-    var tabs = el("div", "tabs"); tabs.setAttribute("role", "tablist");
-    items.forEach(function (x) { var t = btn("tab" + (cur === x[0] ? " on" : ""), x[1], function () { fn(x[0]); }); t.setAttribute("role", "tab"); t.setAttribute("aria-selected", cur === x[0] ? "true" : "false"); tabs.appendChild(t); });
-    return tabs;
-  }
-  function renderAdmin(main) {
-    main.appendChild(el("h1", "pagetitle", "👑 Admin"));
-    main.appendChild(el("p", "sub", "Who is going where, who packed or added what, and everyone's accounts. Private items stay hidden."));
-    showFlash(main);
-    main.appendChild(tabsBar([["people", "👥 People"], ["trips", "✈️ Trips"], ["groups", "🧑‍🤝‍🧑 Groups"], ["activity", "🔔 Activity"]], adminTab, function (t) { adminTab = t; render(); }));
-    if (!adminUsers) { main.appendChild(el("p", "sub", "Loading…")); return; }
-    if (adminTab === "activity") { main.appendChild(el("h2", "dtrip", "Everyone's recent activity")); renderFeed(main, adminFeed, "No activity yet. It shows up as people tick, add and plan."); return; }
+    var tabs = el("div", "v2-listtabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Admin sections");
+    [["people", "People"], ["trips", "Trips"], ["groups", "Groups"], ["activity", "Activity"]].forEach(function (x) {
+      var b = el("button", "v2-tab"); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", adminTab === x[0] ? "true" : "false"); b.appendChild(document.createTextNode(x[1]));
+      b.addEventListener("click", function () { adminTab = x[0]; render(); }); tabs.appendChild(b);
+    });
+    wrap.appendChild(tabs);
+    if (!adminUsers) { wrap.appendChild(el("p", "v2-sub", "Loading…")); return; }
+    if (adminTab === "activity") {
+      if (!adminFeed || !adminFeed.length) { wrap.appendChild(el("p", "v2-sub", "No activity yet.")); return; }
+      var fd = el("div", "v2-feed"); adminFeed.forEach(function (ev) { var r = el("div", "v2-feedrow"); r.appendChild(el("span", null, feedLine(ev))); r.appendChild(el("span", "when", ago(ev.t))); fd.appendChild(r); }); wrap.appendChild(fd); return;
+    }
     if (adminTab === "groups") {
-      main.appendChild(el("h2", "dtrip", "Group checklists"));
-      if (!adminGroups.length) { main.appendChild(el("div", "empty", "No groups yet.")); return; }
+      if (!adminGroups.length) { wrap.appendChild(el("p", "v2-sub", "No groups yet.")); return; }
       adminGroups.forEach(function (g) {
-        var c = el("div", "ucard"); c.setAttribute("data-group-card", g.name);
-        var h = el("div", "uhead"); h.appendChild(el("span", "uname", "👥 " + g.name)); h.appendChild(el("span", "badge", "code " + fmtCode(g.code))); c.appendChild(h);
-        c.appendChild(el("div", "umeta", "People: " + (g.members.length ? g.members.join(", ") : "nobody") + " · 📅 " + dayWords(g.travelDate) + " · " + g.packed + " of " + g.need + " packed"));
-        var bar = el("div", "bar"), fill = document.createElement("i"); fill.style.width = (g.need ? Math.round(g.packed / g.need * 100) : 0) + "%"; bar.appendChild(fill); c.appendChild(bar); main.appendChild(c);
+        var c = el("div", "v2-rowcard"); c.setAttribute("data-group-card", g.name);
+        var top = el("div", "top"); top.appendChild(el("b", null, "👥 " + g.name)); top.appendChild(el("span", "v2-by", fmtCode(g.code))); c.appendChild(top);
+        c.appendChild(el("div", "v2-stat", "👤 " + (g.members.length ? g.members.join(", ") : "nobody") + " · 📅 " + dayWords(g.travelDate) + " · " + g.packed + "/" + g.need + " packed"));
+        c.appendChild(v2Bar(g.packed, g.need)); wrap.appendChild(c);
       });
       return;
     }
     if (adminTab === "trips") {
-      main.appendChild(el("h2", "dtrip", "Who is going where"));
-      if (!adminTrips.length) { main.appendChild(el("div", "empty", "No trips yet.")); return; }
+      if (!adminTrips.length) { wrap.appendChild(el("p", "v2-sub", "No trips yet.")); return; }
       adminTrips.forEach(function (t) {
-        var c = el("div", "ucard"); c.setAttribute("data-trip", t.username + "|" + t.trip);
-        var h = el("div", "uhead"); h.appendChild(el("span", "uname", "👤 " + t.username)); if (t.packedAt) h.appendChild(el("span", "badge", "✅ packed")); c.appendChild(h);
-        c.appendChild(el("div", "umeta", "✈️ " + t.trip + " · 📅 " + dayWords(t.travelDate) + " · " + t.packed + " of " + t.need + " packed"));
-        var bar = el("div", "bar"), fill = document.createElement("i"); fill.style.width = (t.need ? Math.round(t.packed / t.need * 100) : 0) + "%"; bar.appendChild(fill); c.appendChild(bar); main.appendChild(c);
+        var c = el("div", "v2-rowcard"); c.setAttribute("data-trip", t.username + "|" + t.trip);
+        var top = el("div", "top"); top.appendChild(el("b", null, "👤 " + t.username)); if (t.packedAt) top.appendChild(el("span", "v2-by", "✅ packed")); c.appendChild(top);
+        c.appendChild(el("div", "v2-stat", "✈️ " + t.trip + " · 📅 " + dayWords(t.travelDate) + " · " + t.packed + "/" + t.need + " packed"));
+        c.appendChild(v2Bar(t.packed, t.need)); wrap.appendChild(c);
       });
       return;
     }
-    var add = el("div", "panel"); add.appendChild(el("h2", null, "Add a family member"));
-    var form = document.createElement("form"); form.noValidate = true; var row = el("div", "inline");
-    var n = field("uName", "Name", "text", "off"), p = field("uPass", "Password", "text", "off"); p.input.placeholder = "blank = auto-make one";
-    row.appendChild(n.wrap); row.appendChild(p.wrap); form.appendChild(row);
-    var go = el("button", "btn full", "Create account"); go.type = "submit"; go.style.marginTop = "12px"; form.appendChild(go);
+    // people tab: add a member + the list
+    var addCard = el("div", "v2-card"); addCard.style.cssText = "display:flex;flex-direction:column;gap:12px";
+    addCard.appendChild(el("h2", "v2-h2", "Add a family member"));
+    var form = document.createElement("form"); form.noValidate = true; form.style.cssText = "display:flex;flex-direction:column;gap:12px";
+    var n = v2Field("uName", "Name", "text", "off"), p = v2Field("uPass", "Temporary password", "text", "off", "blank = make one for them");
+    form.appendChild(n.wrap); form.appendChild(p.wrap);
+    var go = el("button", "v2-btn full", "Create account"); go.type = "submit"; form.appendChild(go);
     form.addEventListener("submit", function (ev) {
       ev.preventDefault();
       api("POST", "/api/admin/users", { username: n.input.value.trim(), password: p.input.value || undefined }).then(function (r) {
-        flash = { title: "✅ Account created", user: r.user.username, password: r.password }; loadAdmin(); render();
+        flash = { title: "✅ Created " + r.user.username, password: r.password }; loadAdmin(); render();
       }).catch(function (e) { flash = { error: errText(e) }; render(); });
     });
-    add.appendChild(form); main.appendChild(add);
-    main.appendChild(el("h2", "dtrip", "People (" + adminUsers.length + ")"));
+    addCard.appendChild(form); wrap.appendChild(addCard);
+    wrap.appendChild(el("h2", "v2-h2", "People (" + adminUsers.length + ")"));
     adminUsers.forEach(function (u) {
-      var c = el("div", "ucard"); c.setAttribute("data-user", u.key);
-      var h = el("div", "uhead"); h.appendChild(el("span", "uname", u.username)); if (u.role === "admin") h.appendChild(el("span", "badge admin", "admin")); if (u.mustChange) h.appendChild(el("span", "badge warn", "must set new password")); c.appendChild(h);
-      c.appendChild(el("div", "umeta", "Joined " + fmtDate(u.createdAt) + " · last login " + fmtDateTime(u.lastLogin) + " · last saved " + fmtDateTime(u.lastSaved) + " · " + u.trips + (u.trips === 1 ? " trip" : " trips") + ", " + u.items + " shared items" + (u.privateItems ? " · 🙈 " + u.privateItems + " private (hidden)" : "") + (u.circle ? " · family code: " + u.circle : " · not in a family")));
-      var a = el("div", "uacts");
-      a.appendChild(btn("", "👀 View lists", function () { viewUser(u); }));
+      var c = el("div", "v2-rowcard"); c.setAttribute("data-user", u.key);
+      var top = el("div", "top"); top.appendChild(el("b", null, u.username));
+      if (u.role === "admin") top.appendChild(el("span", "v2-you", "admin"));
+      if (u.mustChange) top.appendChild(el("span", "v2-by", "must reset pw")); c.appendChild(top);
+      c.appendChild(el("div", "v2-stat", "joined " + fmtDate(u.createdAt) + " · " + u.trips + (u.trips === 1 ? " trip" : " trips") + ", " + u.items + " shared" + (u.privateItems ? " · 🙈 " + u.privateItems + " private" : "") + (u.circle ? " · code " + u.circle : " · no family")));
+      var acts = el("div"); acts.style.cssText = "display:flex;flex-wrap:wrap;gap:8px";
+      acts.appendChild(btn("v2-btn sec", "View lists", function () { viewUser(u); }));
       if (u.role !== "admin") {
-        a.appendChild(btn("", "🔑 Reset password", function () {
+        acts.appendChild(btn("v2-btn sec", "Reset password", function () {
           openModal({ title: "Reset password for " + u.username, text: "Leave empty to make a random password.", placeholder: "new password (optional)", ok: "Reset", optional: true }, function (v) { resetPassword(u, v); });
         }));
-        a.appendChild(btn("danger", "🗑️ Delete", function () {
+        acts.appendChild(btn("v2-btn sec v2-danger-btn", "Delete", function () {
           confirmBox("Delete " + u.username + "?", "Their account and all their lists will be removed for good.", "Delete", function () {
             api("DELETE", "/api/admin/users/" + encodeURIComponent(u.key)).then(function () { flash = { title: "🗑️ Deleted " + u.username }; loadAdmin(); }).catch(function (e) { flash = { error: errText(e) }; render(); });
           });
         }));
       }
-      c.appendChild(a); main.appendChild(c);
+      c.appendChild(acts); wrap.appendChild(c);
     });
   }
   function resetPassword(u, custom) {
@@ -646,26 +634,32 @@
   function viewUser(u) {
     api("GET", "/api/admin/users/" + encodeURIComponent(u.key) + "/data").then(function (r) { adminDetail = r; view = "adminuser"; render(); }).catch(function (e) { flash = { error: errText(e) }; render(); });
   }
-  /* read-only look at someone's lists (used by the admin and by family members) */
-  function renderReadOnly(main, o) {
-    main.appendChild(btn("link", o.backText, o.onBack));
-    main.appendChild(el("h1", "pagetitle", "👀 " + o.username + (o.you ? " (you)" : "") + "'s lists"));
-    main.appendChild(el("p", "sub", "Read-only. Last saved " + fmtDateTime(o.updatedAt) + "." + (o.privateItems ? "  🙈 " + o.privateItems + " private item" + (o.privateItems === 1 ? " is" : "s are") + " hidden." : "")));
-    var d = o.data;
-    if (!d || !d.trips.length) { main.appendChild(el("div", "empty", "Nothing shared yet.")); return; }
-    d.trips.forEach(function (t) {
-      var p = el("div", "panel");
-      p.appendChild(el("div", "dtrip", "✈️ " + t.name + (t.travelDate ? "  ·  📅 " + dayWords(t.travelDate) : "") + (t.packedAt ? "  ·  ✅ packed" : "")));
-      t.lists.forEach(function (l) {
-        var c = counts(l.items), box = el("div", "dlist"); box.appendChild(el("b", null, l.emoji + " " + l.name + " (" + c.p + "/" + c.need + ")"));
-        l.items.forEach(function (i) { box.appendChild(el("div", i.state === "packed" ? "packed" : i.state === "skip" ? "skip" : "", (i.state === "packed" ? "✓ " : i.state === "skip" ? "✕ " : "○ ") + i.emoji + " " + i.name)); });
-        p.appendChild(box);
+  // Read-only view of someone's lists (admin → a user). Reuses the v2 read-only item rows.
+  function renderReadOnly(o) {
+    var wrap = gShell(false);
+    var top = v2Brandbar(wrap); top.insertBefore(btnIcon(G.back, "Back", o.onBack), top.firstChild);
+    wrap.appendChild(el("h1", "v2-h1", o.username + (o.you ? " (you)" : "") + "’s lists"));
+    wrap.appendChild(el("p", "v2-sub", "Read-only · last saved " + fmtDateTime(o.updatedAt) + "." + (o.privateItems ? " " + o.privateItems + " private item" + (o.privateItems === 1 ? "" : "s") + " hidden." : "")));
+    var trips = (o.data && o.data.trips) || [];
+    if (!trips.length) { wrap.appendChild(el("p", "v2-sub", "Nothing shared yet.")); return; }
+    trips.forEach(function (t) {
+      var card = el("div", "v2-card"); card.style.cssText = "display:flex;flex-direction:column;gap:10px";
+      var hh = el("div"); hh.style.cssText = "display:flex;align-items:baseline;justify-content:space-between;gap:10px";
+      var left = el("div"); left.appendChild(el("div", "v2-h2", "✈️ " + t.name)); if (t.travelDate) left.appendChild(el("div", "v2-meta", "📅 " + dayWords(t.travelDate))); hh.appendChild(left);
+      var pk = 0, nn = 0; (t.lists || []).forEach(function (l) { (l.items || []).forEach(function (i) { if (i.state === "packed") { pk++; nn++; } else if (i.state !== "skip") nn++; }); });
+      hh.appendChild(el("span", "v2-pct", nn ? Math.round(pk / nn * 100) + "% packed" : "—")); card.appendChild(hh);
+      (t.lists || []).forEach(function (l) {
+        card.appendChild(el("div", "v2-kicker", (l.emoji ? l.emoji + " " : "") + l.name));
+        var box = el("div", "v2-ro");
+        if (!l.items || !l.items.length) { var e = el("div", "v2-roitem"); e.appendChild(el("span", "st")); e.appendChild(el("span", "nm", "Nothing here")); box.appendChild(e); }
+        else l.items.forEach(function (i) { box.appendChild(roItem(i)); });
+        card.appendChild(box);
       });
-      main.appendChild(p);
+      wrap.appendChild(card);
     });
   }
-  function renderAdminUser(main) {
-    renderReadOnly(main, { backText: "← Back to admin", onBack: function () { view = "admin"; adminDetail = null; render(); }, username: adminDetail.username, data: adminDetail.data, updatedAt: adminDetail.updatedAt, privateItems: adminDetail.privateItems });
+  function renderAdminUser() {
+    renderReadOnly({ onBack: function () { view = "admin"; adminDetail = null; render(); }, username: adminDetail.username, data: adminDetail.data, updatedAt: adminDetail.updatedAt, privateItems: adminDetail.privateItems });
   }
 
   /* ================= family ================= */
@@ -878,29 +872,35 @@
     if (!shared || document.hidden || !(view === "shared" || !user)) return;
     api("GET", "/api/shared/" + encodeURIComponent(String(shared.code).replace(/[^A-Za-z0-9]/g, ""))).then(function (r) { if (!shared) return; shared.trip = r.trip; shared.updatedAt = r.updatedAt; shared.ownerName = r.ownerName; render(); }).catch(function () { });
   }, 15000);
-  function renderTripBlock(parent, t) {
-    var c = { p: 0, need: 0 }; t.lists.forEach(function (l) { var x = counts(l.items); c.p += x.p; c.need += x.need; });
-    var p = el("div", "panel");
-    p.appendChild(el("div", "dtrip", "✈️ " + t.name + (t.travelDate ? "  ·  📅 " + dayWords(t.travelDate) : "") + (t.packedAt ? "  ·  ✅ packed" : "")));
-    p.appendChild(el("div", "umeta", c.p + " of " + c.need + " packed"));
-    var bar = el("div", "bar"), fill = document.createElement("i"); fill.style.width = (c.need ? Math.round(c.p / c.need * 100) : 0) + "%"; bar.appendChild(fill); p.appendChild(bar);
-    t.lists.forEach(function (l) {
-      var lc = counts(l.items), box = el("div", "dlist"); box.appendChild(el("b", null, l.emoji + " " + l.name + " (" + lc.p + "/" + lc.need + ")"));
-      l.items.forEach(function (i) { box.appendChild(el("div", i.state === "packed" ? "packed" : i.state === "skip" ? "skip" : "", (i.state === "packed" ? "✓ " : i.state === "skip" ? "✕ " : "○ ") + i.emoji + " " + i.name)); });
-      p.appendChild(box);
+  function renderShared() {
+    var wrap = gShell(false);
+    var top = v2Brandbar(wrap);
+    top.insertBefore(btnIcon(G.back, user ? "Back to my trips" : "Back", function () { shared = null; view = "app"; if (user) appView = "home"; render(); }), top.firstChild);
+    var t = shared.trip;
+    wrap.appendChild(el("h1", "v2-h1", "👀 " + shared.ownerName + "'s " + t.name));
+    wrap.appendChild(el("p", "v2-sub", "View only · updated " + fmtDateTime(shared.updatedAt) + ". You can look, but you can't change anything."));
+    var card = el("div", "v2-card"); card.style.cssText = "display:flex;flex-direction:column;gap:10px";
+    var h = el("div"); h.style.cssText = "display:flex;align-items:baseline;justify-content:space-between;gap:10px";
+    var left = el("div"); left.appendChild(el("div", "v2-h2", "✈️ " + t.name));
+    if (t.travelDate) left.appendChild(el("div", "v2-meta", "📅 " + dayWords(t.travelDate)));
+    h.appendChild(left);
+    var p = 0, n = 0; (t.lists || []).forEach(function (l) { (l.items || []).forEach(function (i) { if (i.state === "packed") { p++; n++; } else if (i.state !== "skip") n++; }); });
+    h.appendChild(el("span", "v2-pct", n ? Math.round(p / n * 100) + "% packed" : "—")); card.appendChild(h);
+    (t.lists || []).forEach(function (l) {
+      card.appendChild(el("div", "v2-kicker", (l.emoji ? l.emoji + " " : "") + l.name));
+      var box = el("div", "v2-ro");
+      if (!l.items || !l.items.length) { var e = el("div", "v2-roitem"); e.appendChild(el("span", "st")); e.appendChild(el("span", "nm", "Nothing here")); box.appendChild(e); }
+      else l.items.forEach(function (i) { box.appendChild(roItem(i)); });
+      card.appendChild(box);
     });
-    parent.appendChild(p);
+    wrap.appendChild(card);
+    if (!user) {
+      var links = el("div", "v2-linkrow");
+      links.appendChild(btn("v2-btn full", "Create your own Baggo account", function () { shared = null; authMode = "signup"; render(); }));
+      wrap.appendChild(links); v2Footer(wrap);
+    }
   }
-  function renderShared(main) {
-    main.appendChild(btn("link", user ? "← Back to my trips" : "← Log in or create an account", function () { shared = null; view = "app"; render(); }));
-    main.appendChild(el("h1", "pagetitle", "👀 " + shared.ownerName + "'s " + shared.trip.name));
-    main.appendChild(el("p", "sub", "View only: you can look, but you can't change or delete anything. Updated " + fmtDateTime(shared.updatedAt) + "."));
-    renderTripBlock(main, shared.trip);
-  }
-  function renderSharedGuest() {
-    document.body.className = "guest";
-    var main = $("main"); main.innerHTML = ""; renderShared(main); renderSide();
-  }
+  function renderSharedGuest() { renderShared(); }
 
   /* ================= group travel checklists ================= */
   var pendingGroup = null, groups = null, curGroup = null, groupListId = null, toasted = {}, groupTick = 0;
@@ -990,63 +990,80 @@
   }, 6000);
 
   function groupCounts(G) { var p = 0, t = 0, s = 0; G.lists.forEach(function (l) { var c = counts(l.items); p += c.p; t += c.t; s += c.s; }); return { p: p, t: t, s: s, need: p + t }; }
-  function renderGroup(main) {
-    var G = curGroup, g = G.group;
-    var l = G.lists.filter(function (x) { return x.id === groupListId; })[0] || G.lists[0];
-    main.appendChild(btn("link", "← Back", function () { view = "app"; curGroup = null; render(); }));
-    var head = el("div", "trip-head"); head.appendChild(el("div", "plane", "👥")); head.appendChild(el("h1", null, g.name));
-    var ic = el("div", "icons");
-    var re = btn("icon", "✏️", function () { openModal({ title: "Rename group", value: g.name, ok: "Save" }, function (n) { groupOp({ op: "rename", name: n }); }); }); re.title = "Rename group"; re.setAttribute("aria-label", "Rename group");
-    var lv = btn("icon", "🚪", leaveGroup); lv.title = "Leave group"; lv.setAttribute("aria-label", "Leave group");
-    ic.appendChild(re); ic.appendChild(lv); head.appendChild(ic); main.appendChild(head);
-    main.appendChild(el("p", "sub", "With: " + G.members.map(function (m) { return m.key === G.you ? "you" : m.name; }).join(", ")));
-
-    var cb = el("div", "flash share"); cb.appendChild(el("div", null, "🔑 Group code — share it so others can join and pack together"));
-    var cc = el("code", "bigcode", fmtCode(g.code)); cc.id = "groupCode"; cb.appendChild(cc);
-    var cr = el("div", "uacts"); cr.style.marginTop = "8px"; cr.appendChild(btn("", "Copy code", function () { copyText(fmtCode(g.code)); })); cr.appendChild(btn("", "Copy link", function () { copyText(location.origin + "/?group=" + g.code); })); cb.appendChild(cr); main.appendChild(cb);
-
-    var gc = groupCounts(G);
-    main.appendChild(buildCountdown({ travelDate: g.travelDate }, { t: gc.t },
-      function () { openModal({ title: "When is the group travelling? 📅", inputType: "date", value: g.travelDate || "", ok: "Save date" }, function (v) { groupOp({ op: "setDate", date: v }); }); },
-      function () { groupOp({ op: "setDate", date: null }); }));
-    var pr = el("section", "progress"), pct = gc.need ? Math.round(gc.p / gc.need * 100) : 0;
-    var pt = el("div", "progress-top"); pt.appendChild(el("span", null, gc.p + " of " + gc.need + " packed together")); pt.appendChild(el("span", null, pct + "%")); pr.appendChild(pt);
-    var bar = el("div", "bar"), fill = document.createElement("i"); fill.style.width = pct + "%"; bar.appendChild(fill); pr.appendChild(bar); main.appendChild(pr);
-
-    var chips = el("div", "chips");
-    G.lists.forEach(function (x) { var c = counts(x.items), ch = el("button", "chip" + (x.id === l.id ? " cur" : ""), x.emoji + " " + x.name); ch.type = "button"; ch.appendChild(el("small", null, c.p + "/" + c.need)); ch.addEventListener("click", function () { groupListId = x.id; render(); }); chips.appendChild(ch); });
-    chips.appendChild(btn("chip add", "➕ Checklist", function () { openModal({ title: "New group checklist 📋", placeholder: "Checklist name", ok: "Add" }, function (n) { groupOp({ op: "addList", name: n, emoji: guess(LIST_EMOJI, n, "📋") }); }); }));
-    main.appendChild(chips);
-    if (G.lists.length > 1) { var tl = el("div", "list-tools"); tl.appendChild(btn("link", "🗑️ Delete this checklist", function () { confirmBox("Delete “" + l.name + "”?", "Its items are removed for everyone in the group.", "Delete", function () { groupOp({ op: "removeList", listId: l.id }); }); })); main.appendChild(tl); }
-
-    var add = el("div", "add"), inp = document.createElement("input"); inp.type = "text"; inp.id = "gNewItem"; inp.maxLength = 80; inp.autocomplete = "off"; inp.placeholder = "Add to " + l.name + " (everyone sees it)…"; inp.setAttribute("aria-label", "New group item");
-    var submit = function () { var v = inp.value.trim(); if (!v) { inp.focus(); return; } inp.value = ""; groupOp({ op: "addItem", listId: l.id, name: v, emoji: guess(ITEM_EMOJI, v, "🧳") }).then(function () { var n = $("gNewItem"); if (n) n.focus(); }); };
-    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); submit(); } });
-    add.appendChild(inp); add.appendChild(btn("btn", "Add ➕", submit)); main.appendChild(add);
-
-    var ul = el("ul", "items");
-    if (!l.items.length) ul.appendChild(el("li", "empty", "Nothing in " + l.name + " yet 🌈 Anyone in the group can add items."));
-    l.items.forEach(function (it) {
-      var li = el("li", "row" + (it.state === "packed" ? " packed" : it.state === "skip" ? " skip" : "")), em = el("div", "emoji", it.emoji); em.setAttribute("aria-hidden", "true");
-      var acts = el("div", "acts");
-      acts.appendChild(actBtn("tick", "✓", "Packed: " + it.name, it.state === "packed", function () { groupOp({ op: "setState", itemId: it.id, state: it.state === "packed" ? "todo" : "packed" }); }));
-      acts.appendChild(actBtn("cross", "✕", "Not needed: " + it.name, it.state === "skip", function () { groupOp({ op: "setState", itemId: it.id, state: it.state === "skip" ? "todo" : "skip" }); }));
-      acts.appendChild(actBtn("minus", "−", "Remove: " + it.name, false, function () { groupOp({ op: "removeItem", itemId: it.id }); }));
-      var nm = el("div", "name", it.name); if (it.by) nm.appendChild(el("span", "bytag", (it.state === "skip" ? "🚫 skipped by " : "✓ packed by ") + (it.by === G.members.filter(function (m) { return m.key === G.you; })[0].name ? "you" : it.by)));
-      li.appendChild(em); li.appendChild(nm); li.appendChild(acts); ul.appendChild(li);
-    });
-    main.appendChild(ul);
-
-    var fin = el("div", "finish"); fin.appendChild(btn("btn", "🧳 Everything packed!", function () {
-      var m = $("msg"); m.innerHTML = ""; var left = []; G.lists.forEach(function (x) { x.items.forEach(function (i) { if (i.state === "todo") left.push(x.emoji + " " + i.emoji + " " + i.name); }); });
-      if (!gc.need && !gc.s) { m.className = "msg show bad"; m.textContent = "Nothing in this group yet. Add some items first. 📝"; return; }
-      if (left.length) { m.className = "msg show bad"; m.appendChild(el("div", null, "😬 Not everything is ticked yet. " + left.length + (left.length === 1 ? " item is" : " items are") + " still waiting:")); var u = el("ul"); left.forEach(function (t) { u.appendChild(el("li", null, t)); }); m.appendChild(u); }
-      else { m.className = "msg show good"; m.textContent = "🎉 The whole group is packed! Have an amazing trip! ✈️🌴"; }
+  function groupItemV2(grp, it) {
+    var li = el("li", "v2-item" + (it.state === "packed" ? " done" : it.state === "skip" ? " skip" : ""));
+    var chk = el("button", "v2-check"); chk.type = "button"; chk.setAttribute("role", "checkbox"); chk.setAttribute("aria-checked", it.state === "packed" ? "true" : "false"); chk.setAttribute("aria-label", (it.state === "packed" ? "Packed: " : "Pack: ") + it.name);
+    var bx = el("span", "box"); if (it.state === "packed") bx.appendChild(gsvg(G.tick, 3)); chk.appendChild(bx);
+    chk.addEventListener("click", function () { groupOp({ op: "setState", itemId: it.id, state: it.state === "packed" ? "todo" : "packed" }); });
+    var lab = el("button", "label"); lab.type = "button"; lab.setAttribute("aria-label", it.name);
+    if (it.emoji) lab.appendChild(el("span", "emoji", it.emoji));
+    lab.appendChild(el("span", "nm", it.name));
+    if (it.by) { var meName = (grp.members.filter(function (m) { return m.key === grp.you; })[0] || {}).name; lab.appendChild(el("span", "v2-by", (it.state === "skip" ? "✕ " : "✓ ") + (it.by === meName ? "you" : it.by))); }
+    lab.addEventListener("click", function () { groupOp({ op: "setState", itemId: it.id, state: it.state === "packed" ? "todo" : "packed" }); });
+    var skip = el("button", "v2-skip"); skip.type = "button"; skip.setAttribute("aria-pressed", it.state === "skip" ? "true" : "false"); skip.setAttribute("aria-label", "Not needed: " + it.name); skip.title = "Not needed"; skip.appendChild(gsvg(G.skip)); skip.addEventListener("click", function () { groupOp({ op: "setState", itemId: it.id, state: it.state === "skip" ? "todo" : "skip" }); });
+    var rm = el("button", "v2-rowbtn danger"); rm.type = "button"; rm.setAttribute("aria-label", "Remove: " + it.name); rm.title = "Remove"; rm.appendChild(gsvg("M5 12h14")); rm.addEventListener("click", function () { groupOp({ op: "removeItem", itemId: it.id }); });
+    li.appendChild(chk); li.appendChild(lab); li.appendChild(skip); li.appendChild(rm); return li;
+  }
+  function renderGroup() {
+    var grp = curGroup, g = grp.group;
+    var l = grp.lists.filter(function (x) { return x.id === groupListId; })[0] || grp.lists[0];
+    var wrap = gShell(false); appHeader(wrap, function () { view = "app"; appView = "home"; curGroup = null; render(); });
+    // title + rename
+    var h = el("div"); h.style.cssText = "display:flex;align-items:flex-start;gap:8px";
+    var tt = el("h1", "v2-h1"); tt.style.cssText = "flex:1;min-width:0;overflow-wrap:anywhere"; tt.appendChild(document.createTextNode("👥 " + g.name)); h.appendChild(tt);
+    var ic = el("div", "v2-iconrow"); ic.style.flex = "none";
+    var re = el("button", "v2-iconbtn"); re.type = "button"; re.setAttribute("aria-label", "Rename group"); re.title = "Rename group"; re.appendChild(gsvg(G.pencil)); re.addEventListener("click", function () { openModal({ title: "Rename group", value: g.name, ok: "Save" }, function (n) { groupOp({ op: "rename", name: n }); }); }); ic.appendChild(re);
+    h.appendChild(ic); wrap.appendChild(h);
+    wrap.appendChild(el("p", "v2-sub", "With " + grp.members.map(function (m) { return m.key === grp.you ? "you" : m.name; }).join(", ")));
+    // share code
+    var cb = el("div", "v2-share"); cb.appendChild(el("div", "v2-h2", "🔑 Group code"));
+    cb.appendChild(el("p", "v2-sub", "Share it so others can join and pack together."));
+    cb.appendChild(el("div", "code", fmtCode(g.code)));
+    var cr = el("div", "row"); cr.appendChild(btn("v2-btn sec", "Copy code", function () { copyText(fmtCode(g.code)); })); cr.appendChild(btn("v2-btn sec", "Copy link", function () { copyText(location.origin + "/?group=" + g.code); })); cb.appendChild(cr); wrap.appendChild(cb);
+    var gc = groupCounts(grp);
+    wrap.appendChild(v2Countdown({ travelDate: g.travelDate }, {
+      counts: { t: gc.t },
+      onSet: function () { openModal({ title: "When is the group travelling? 📅", inputType: "date", value: g.travelDate || "", ok: "Save date" }, function (v) { if (parseDay(v)) groupOp({ op: "setDate", date: v }); }); },
+      onClear: function () { groupOp({ op: "setDate", date: null }); },
     }));
-    var msg = el("div", "msg"); msg.id = "msg"; msg.setAttribute("role", "status"); fin.appendChild(msg); main.appendChild(fin);
-
-    main.appendChild(el("h2", "dtrip", "Group activity")); renderFeed(main, G.feed, "Nothing yet. Changes by anyone in the group show up here.", groupLine);
-    if ("Notification" in window && Notification.permission === "default") { var nt = el("div", "list-tools"); nt.appendChild(btn("link", "🔔 Also show alerts on this device when the app is in the background", enableAlerts)); main.appendChild(nt); }
+    var prow = el("div"); prow.style.cssText = "display:flex;justify-content:space-between;align-items:baseline;gap:10px";
+    prow.appendChild(el("span", "v2-sub", gc.p + " of " + gc.need + " packed together"));
+    prow.appendChild(el("span", "v2-pct", (gc.need ? Math.round(gc.p / gc.need * 100) : 0) + "% packed")); wrap.appendChild(prow);
+    wrap.appendChild(v2Bar(gc.p, gc.need));
+    // list tabs
+    var tabs = el("div", "v2-listtabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Group checklists");
+    grp.lists.forEach(function (x) { var c = counts(x.items); var b = el("button", "v2-tab"); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", x.id === l.id ? "true" : "false"); b.appendChild(document.createTextNode((x.emoji ? x.emoji + " " : "") + x.name)); b.appendChild(el("span", "c", c.p + "/" + c.need)); b.addEventListener("click", function () { groupListId = x.id; render(); }); tabs.appendChild(b); });
+    var addTab = el("button", "v2-tab"); addTab.type = "button"; addTab.appendChild(gsvg(G.plus)); addTab.appendChild(document.createTextNode(" Checklist")); addTab.addEventListener("click", function () { openModal({ title: "New group checklist 📋", placeholder: "Checklist name", ok: "Add" }, function (n) { groupOp({ op: "addList", name: n, emoji: guess(LIST_EMOJI, n, "📋") }); }); }); tabs.appendChild(addTab);
+    wrap.appendChild(tabs);
+    if (grp.lists.length > 1) { var tools = el("div"); tools.style.cssText = "display:flex;flex-wrap:wrap;gap:8px"; tools.appendChild(btn("v2-btn sec v2-danger-btn", "Delete this list", function () { confirmBox("Delete “" + l.name + "”?", "Its items are removed for everyone in the group.", "Delete", function () { groupOp({ op: "removeList", listId: l.id }); }); })); wrap.appendChild(tools); }
+    // items
+    var ul = el("ul", "v2-rows"); ul.setAttribute("aria-label", l.name);
+    if (!l.items.length) { var li0 = el("li"); li0.style.cssText = "background:var(--bg);padding:14px 16px;color:var(--slate);font-size:14px"; li0.textContent = "Nothing in " + l.name + " yet — anyone in the group can add items."; ul.appendChild(li0); }
+    l.items.forEach(function (it) { ul.appendChild(groupItemV2(grp, it)); });
+    wrap.appendChild(ul);
+    // quick add
+    var form = document.createElement("form"); form.className = "v2-add";
+    var inp = el("input", "v2-input"); inp.id = "gNewItem"; inp.maxLength = 80; inp.autocomplete = "off"; inp.placeholder = "Add to " + l.name + " (everyone sees it)…"; inp.setAttribute("aria-label", "New group item");
+    form.appendChild(inp); var addb = el("button", "v2-btn", "Add"); addb.type = "submit"; form.appendChild(addb);
+    form.addEventListener("submit", function (ev) { ev.preventDefault(); var v = inp.value.trim(); if (!v) { inp.focus(); return; } inp.value = ""; groupOp({ op: "addItem", listId: l.id, name: v, emoji: guess(ITEM_EMOJI, v, "🧳") }).then(function () { var nf = $("gNewItem"); if (nf) nf.focus(); }); });
+    wrap.appendChild(form);
+    // finish
+    wrap.appendChild(btn("v2-btn full", "🧳 Everything packed!", function () {
+      var m = $("msg"); if (!m) return; m.className = ""; m.innerHTML = "";
+      var left = []; grp.lists.forEach(function (x) { x.items.forEach(function (i) { if (i.state === "todo") left.push(x.emoji + " " + i.emoji + " " + i.name); }); });
+      if (!gc.need && !gc.s) { m.className = "v2-finish bad"; m.textContent = "Nothing in this group yet. Add some items first. 📝"; return; }
+      if (left.length) { m.className = "v2-finish bad"; m.appendChild(el("div", null, "😬 Not done yet — " + left.length + (left.length === 1 ? " item is" : " items are") + " still waiting:")); var u = el("ul"); left.forEach(function (t) { u.appendChild(el("li", null, t)); }); m.appendChild(u); }
+      else { m.className = "v2-finish good"; m.textContent = "🎉 The whole group is packed! Have a great trip. ✈️"; }
+    }));
+    var msg = el("div"); msg.id = "msg"; msg.setAttribute("role", "status"); wrap.appendChild(msg);
+    // activity
+    wrap.appendChild(el("h2", "v2-h2", "Group activity"));
+    if (!grp.feed || !grp.feed.length) wrap.appendChild(el("p", "v2-sub", "Nothing yet. Changes by anyone in the group show up here."));
+    else { var fd = el("div", "v2-feed"); grp.feed.forEach(function (ev) { var r = el("div", "v2-feedrow"); r.appendChild(el("span", null, groupLine(ev))); r.appendChild(el("span", "when", ago(ev.t))); fd.appendChild(r); }); wrap.appendChild(fd); }
+    var tools2 = el("div"); tools2.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-top:4px";
+    if ("Notification" in window && Notification.permission === "default") tools2.appendChild(btn("v2-btn sec", "Turn on alerts", enableAlerts));
+    tools2.appendChild(btn("v2-btn sec v2-danger-btn", "Leave group", leaveGroup));
+    wrap.appendChild(tools2);
   }
 
   /* ================= main app render ================= */
@@ -1091,12 +1108,7 @@
     foot.appendChild(btn("", "🔗 Open a shared list", askSharedCode));
     foot.appendChild(btn("", "Log out", logout));
   }
-  function actBtn(cls, txt, label, on, fn) {
-    var b = el("button", "act " + cls + (on ? " on" : ""), txt); b.type = "button"; b.setAttribute("aria-label", label); b.title = label;
-    if (cls !== "minus") b.setAttribute("aria-pressed", on ? "true" : "false"); b.addEventListener("click", fn); return b;
-  }
   function renderMain() {
-    if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
     // The signed-in app (Home + Trip + New-trip) is v2: it builds its own shell (no v1 topbar/sidebar).
     if (view === "app") {
       if (appView === "new" && ntForm) return renderNewTripV2();
