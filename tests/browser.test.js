@@ -250,14 +250,15 @@ async function a11y(page, label) {
     await p.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
     await p.reload({ waitUntil: "networkidle" });
     await p.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 8000 });
-    assert.equal(await p.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(239, 234, 225)", "original canvas cached");
+    assert.equal(await p.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(243, 235, 246)", "original canvas cached");
     const cacheBefore = await p.evaluate(async () => (await caches.keys()).filter((k) => k.indexOf("baggo-shell") === 0).sort());
 
-    // change a shell asset (tokens.css) on the server — no sw.js / cache-name change at all
-    const tPath = path.join(pub, "tokens.css");
+    // change a shell asset (v2.css, which carries the rendered canvas colour) on the
+    // server — no sw.js / cache-name change at all
+    const tPath = path.join(pub, "v2.css");
     const tText = fs.readFileSync(tPath, "utf8");
-    assert.ok(tText.includes("#EFEAE1"), "tokens.css has the canvas colour to change");
-    fs.writeFileSync(tPath, tText.replace("#EFEAE1", "#123456"));   // rgb(18,52,86)
+    assert.ok(tText.includes("#f3ebf6"), "v2.css has the canvas colour to change");
+    fs.writeFileSync(tPath, tText.replace("#f3ebf6", "#123456"));   // rgb(18,52,86)
 
     // returning visit (online): the changed CSS is served without a manual cache bump
     await p.reload({ waitUntil: "networkidle" });
@@ -502,9 +503,9 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
-  // The no-account entry screen (guest Welcome) must get the Design_1 look on desktop too — centred on
-  // the warm canvas, not the v1 pink (#fdf8fb). The signed-in centring test above wouldn't catch a
-  // guest-only palette/frame regression, so assert it directly on the very first screen.
+  // The no-account entry screen (guest Welcome) must get the Design_1 layout on desktop too — centred on
+  // the canvas backdrop, with the pink page confined to the frame (not full-bleed). The signed-in centring
+  // test above wouldn't catch a guest-only frame regression, so assert it directly on the very first screen.
   await test("guest Welcome at 768px and 1280px: centred on the canvas, not v1 pink", async () => {
     const ctx = await browser.newContext({ serviceWorkers: "block" });
     const pg = await ctx.newPage();
@@ -526,9 +527,10 @@ async function a11y(page, label) {
       assert.ok(Math.abs(lg - rg) <= 2, `@${width}px guest Welcome centred (gutters ${lg} vs ${rg})`);
       assert.ok(lg > 40, `@${width}px guest Welcome not left-pinned (left gutter ${lg})`);
       assert.ok(g.width <= 561, `@${width}px guest Welcome capped at its max-width (${g.width})`);
-      // the v1 pink page background (#fdf8fb = rgb(253,248,251)) must NOT be used; it must be the canvas
-      assert.notEqual(g.bodyBg, "rgb(253, 248, 251)", `@${width}px guest Welcome must not use the v1 pink background`);
-      assert.equal(g.bodyBg, "rgb(239, 234, 225)", `@${width}px guest Welcome uses the warm canvas (got ${g.bodyBg})`);
+      // the pink PAGE background (#fdf8fb = rgb(253,248,251)) belongs to the frame, not the body; the body
+      // must show the canvas backdrop. If the body itself were pink, the frame has gone full-bleed (the bug).
+      assert.notEqual(g.bodyBg, "rgb(253, 248, 251)", `@${width}px guest Welcome body must not be the pink page (frame gone full-bleed)`);
+      assert.equal(g.bodyBg, "rgb(243, 235, 246)", `@${width}px guest Welcome body shows the canvas backdrop (got ${g.bodyBg})`);
     }
     await ctx.close();
   });
