@@ -892,6 +892,7 @@
 
   /* ================= main app render ================= */
   function renderSide() {
+    var side = $("side"), scrim = $("scrim"); if (side) side.style.display = ""; if (scrim) scrim.style.display = "";   // restore v1 chrome (hidden during guest mode)
     var box = $("tripList"), foot = $("sideFoot"), gbox = $("groupList"); box.innerHTML = ""; foot.innerHTML = ""; gbox.innerHTML = "";
     if (!user || !S) return;
     gbox.appendChild(el("div", "sidehead", "👥 Group checklists"));
@@ -1098,7 +1099,7 @@
     guestMode = true; user = null; gcat = "all";
     var load = (window.BaggoDB ? BaggoDB.loadState(GUEST) : Promise.resolve(null)).catch(function () { return null; });
     return load.then(function (local) {
-      if (local && local.trips && local.trips.length) { S = local; gFix(); gview = S.curTrip ? "trip" : "home"; }
+      if (local && local.trips && local.trips.length) { S = local; gFix(); gview = "home"; }
       else { S = emptyState(); gview = "welcome"; }
       renderGuest();
     });
@@ -1148,12 +1149,25 @@
 
   function renderGuest() {
     if (gview === "new") return renderGNew();
+    if (gview === "trips") return renderGTrips();
     if (gview === "trip" && gTrip()) return renderGTrip();
-    if (S && S.trips.length) return renderGHome();
+    if (gActive().length || (S && S.trips.length)) return renderGHome();
     return renderGWelcome();
   }
+  function gActive() { return S ? S.trips.filter(function (t) { return !t.archived; }) : []; }
+  function gArchived() { return S ? S.trips.filter(function (t) { return t.archived; }) : []; }
+  function gDaysUntil(t) { return daysUntil({ travelDate: t.start }); }
+  function gCountdown(t) { var n = gDaysUntil(t); if (n == null) return "No dates yet"; if (n > 1) return "In " + n + " days"; if (n === 1) return "Tomorrow"; if (n === 0) return "Today"; return "Date passed"; }
+  // The trip Home focuses on: soonest upcoming, then undated, then past; most recently created breaks ties.
+  function gNextTrip() {
+    var a = gActive().slice(); if (!a.length) return null;
+    a.sort(function (x, y) { var dx = gDaysUntil(x), dy = gDaysUntil(y); var rx = dx == null ? 1e8 : dx < 0 ? 1e7 - dx : dx; var ry = dy == null ? 1e8 : dy < 0 ? 1e7 - dy : dy; return rx - ry || (y.created || 0) - (x.created || 0); });
+    return a[0];
+  }
+  function gNewForm() { gform = { name: "", start: "", end: "", noDates: false, profile: null, pick: {}, err: "" }; gGo("new"); }
   function gShell(hasTabs) {
     document.body.className = "v2";
+    var side = $("side"), scrim = $("scrim"); if (side) side.style.display = "none"; if (scrim) scrim.style.display = "none";   // hide v1 chrome in guest mode
     var main = $("main"); main.innerHTML = ""; main.className = "main v2";
     var wrap = el("div", "v2-wrap"); main.appendChild(wrap);
     if (hasTabs) wrap.style.paddingBottom = "96px";
@@ -1168,10 +1182,10 @@
   function gTabbar() {
     var bar = el("nav", "v2-tabbar"); bar.setAttribute("aria-label", "Main");
     [["home", "Home", G.home], ["trips", "Trips", G.bag]].forEach(function (x) {
-      var on = (x[0] === "trips") ? gview === "home" : gview === "trip";
-      var b = el("button"); b.type = "button"; if ((x[0] === "home" && gview === "trip") || (x[0] === "trips" && gview === "home")) b.setAttribute("aria-current", "page");
+      var current = x[0] === "home" ? (gview === "home" || gview === "trip") : gview === "trips";
+      var b = el("button"); b.type = "button"; if (current) b.setAttribute("aria-current", "page");
       var pill = el("span", "pill"); pill.appendChild(gsvg(x[2])); b.appendChild(pill); b.appendChild(el("span", null, x[1]));
-      b.addEventListener("click", function () { gGo(x[0] === "home" ? (gTrip() ? "trip" : "home") : "home"); });
+      b.addEventListener("click", function () { gGo(x[0]); });
       bar.appendChild(b);
     });
     return bar;
@@ -1237,23 +1251,99 @@
     sl.appendChild(box); wrap.appendChild(sl);
     wrap.appendChild(btn("v2-btn full", "Create trip", gCreateTrip));
   }
+  function gOpenTrip(t) { S.curTrip = t.id; gFix(); gcat = "all"; guestPersist(); gGo("trip"); }
+  function gOpenList(t, listId) { S.curTrip = t.id; gFix(); gcat = listId; guestPersist(); gGo("trip"); }
+  function gOtherList(t) { return t.lists.filter(function (l) { return l.kind !== "leave" && l.items.some(function (i) { return i.state === "todo"; }); })[0] || t.lists.filter(function (l) { return l.kind !== "leave"; })[0]; }
+  function gLeaveList(t) { return t.lists.filter(function (l) { return l.kind === "leave"; })[0]; }
+
   function renderGHome() {
     var wrap = gShell(true); gBrand(wrap, true);
-    wrap.appendChild(el("div", "v2-kicker", "Your trips"));
-    S.trips.forEach(function (t) {
-      var c = gCounts(t); var card = el("button", "v2-trip"); card.type = "button";
-      card.appendChild(el("div", "tn", t.name));
-      card.appendChild(el("div", "td", (t.start ? t.start : "No dates yet") + " · " + c.packed + "/" + c.need + " packed"));
-      var pr = el("div", "v2-progress"); pr.style.marginTop = "10px"; var fi = el("i"); fi.style.width = c.pct + "%"; pr.appendChild(fi); card.appendChild(pr);
-      card.addEventListener("click", function () { S.curTrip = t.id; gFix(); gcat = "all"; guestPersist(); gGo("trip"); });
-      wrap.appendChild(card);
+    var active = gActive();
+    if (!active.length) {
+      var em = el("div", "v2-empty");
+      em.appendChild(el("h1", "v2-h1", "No active trips"));
+      em.appendChild(el("p", "v2-sub", gArchived().length ? "Your trips are archived. Plan a new one, or reopen one from Trips." : "Plan your first trip to get started."));
+      em.appendChild(btn("v2-btn full", "Plan a trip", gNewForm));
+      if (gArchived().length) em.appendChild(btn("v2-btn sec full", "See archived trips", function () { gGo("trips"); }));
+      wrap.appendChild(em); $("main").appendChild(gTabbar()); return;
+    }
+    var next = gNextTrip(), days = gDaysUntil(next), c = gCounts(next);
+    // departure-day surfacing: on the day or the day before, lead with the final check
+    var leave = gLeaveList(next);
+    if (days != null && days >= 0 && days <= 1 && leave) {
+      var open = leave.items.filter(function (i) { return i.state === "todo"; }).length;
+      var dep = el("button", "v2-card"); dep.type = "button"; dep.style.cssText = "display:block;width:100%;text-align:start;cursor:pointer;background:var(--together-bg);border-color:var(--together)";
+      dep.appendChild(el("div", "v2-kicker", (days === 0 ? "Leaving today" : "Leaving tomorrow") + " · " + next.name));
+      dep.appendChild(el("div", "v2-h2", leave.emoji + " " + leave.name));
+      dep.appendChild(el("p", "v2-sub", open ? (open + " thing" + (open === 1 ? "" : "s") + " left before you walk out the door.") : "You're all set — nothing left on this list."));
+      dep.addEventListener("click", function () { gOpenList(next, leave.id); });
+      wrap.appendChild(dep);
+    }
+    wrap.appendChild(el("div", "v2-kicker", "Next up"));
+    var card = el("button", "v2-trip"); card.type = "button";
+    card.appendChild(el("div", "tn", next.name));
+    card.appendChild(el("div", "td", gCountdown(next) + (next.start ? " · " + next.start : "") + " · " + c.packed + "/" + c.need + " packed"));
+    var pr = el("div", "v2-progress"); pr.setAttribute("role", "progressbar"); pr.setAttribute("aria-valuemin", "0"); pr.setAttribute("aria-valuemax", String(c.need)); pr.setAttribute("aria-valuenow", String(c.packed)); pr.style.margin = "12px 0 4px"; var fi = el("i"); fi.style.width = c.pct + "%"; pr.appendChild(fi); card.appendChild(pr);
+    card.addEventListener("click", function () { gOpenTrip(next); });
+    wrap.appendChild(card);
+    var ol = gOtherList(next);
+    if (ol) wrap.appendChild(btn("v2-btn full", "Open " + ol.emoji + " " + ol.name, function () { gOpenList(next, ol.id); }));
+
+    var others = active.filter(function (t) { return t.id !== next.id; });
+    if (others.length) {
+      wrap.appendChild(el("div", "v2-kicker", "Your other trips"));
+      others.forEach(function (t) {
+        var cc = gCounts(t); var row = el("button", "v2-trip"); row.type = "button"; row.style.background = "var(--bg)";
+        row.appendChild(el("div", "tn", t.name)); row.appendChild(el("div", "td", gCountdown(t) + " · " + cc.packed + "/" + cc.need + " packed"));
+        row.addEventListener("click", function () { gOpenTrip(t); }); wrap.appendChild(row);
+      });
+    }
+    wrap.appendChild(btn("v2-btn sec full", "Plan another trip", gNewForm));
+    $("main").appendChild(gTabbar());
+  }
+
+  function gDuplicateTrip(t) {
+    var copy = JSON.parse(JSON.stringify(t));
+    copy.id = nid(); copy.name = t.name + " (copy)"; copy.created = Date.now(); copy.packedAt = null; copy.archived = false;
+    copy.start = null; copy.end = null; copy.travelDate = null;   // new dates for the new trip
+    copy.lists.forEach(function (l) { l.id = nid(); l.items.forEach(function (i) { i.id = nid(); i.state = "todo"; }); });  // reset states; keep flags/qty
+    S.trips.push(copy); S.curTrip = copy.id; gFix(); guestPersist(); gcat = "all"; gGo("trip");
+    toast("Duplicated “" + t.name + "”. Set its dates.");
+  }
+  function gArchiveTrip(t) { t.archived = true; if (S.curTrip === t.id) { var a = gActive(); S.curTrip = a[0] ? a[0].id : null; } gFix(); guestPersist(); renderGuest(); toast("Archived “" + t.name + "”."); }
+  function gUnarchive(t) { t.archived = false; guestPersist(); renderGuest(); }
+
+  function renderGTrips() {
+    var wrap = gShell(true); var top = gBrand(wrap, true);
+    wrap.appendChild(el("h1", "v2-h1", "Trips"));
+    var active = gActive();
+    if (!active.length) wrap.appendChild(el("p", "v2-sub", "No active trips. Plan one below."));
+    active.forEach(function (t) {
+      var cc = gCounts(t); var card = el("div", "v2-card"); card.style.display = "flex"; card.style.flexDirection = "column"; card.style.gap = "10px";
+      var open = el("button", "v2-trip"); open.type = "button"; open.style.cssText = "background:transparent;border:0;padding:0;text-align:start;cursor:pointer";
+      open.appendChild(el("div", "tn", t.name)); open.appendChild(el("div", "td", gCountdown(t) + " · " + cc.packed + "/" + cc.need + " packed"));
+      open.addEventListener("click", function () { gOpenTrip(t); }); card.appendChild(open);
+      var acts = el("div"); acts.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
+      acts.appendChild(btn("v2-btn sec", "Duplicate", function () { gDuplicateTrip(t); }));
+      acts.appendChild(btn("v2-btn sec", "Archive", function () { gArchiveTrip(t); }));
+      card.appendChild(acts); wrap.appendChild(card);
     });
-    wrap.appendChild(btn("v2-btn sec full", "Plan another trip", function () { gform = { name: "", start: "", end: "", noDates: false, profile: null, pick: {}, err: "" }; gGo("new"); }));
+    wrap.appendChild(btn("v2-btn full", "Plan a trip", gNewForm));
+    var arch = gArchived();
+    if (arch.length) {
+      wrap.appendChild(el("div", "v2-kicker", "Archived"));
+      arch.forEach(function (t) {
+        var row = el("div", "v2-card"); row.style.cssText = "display:flex;align-items:center;gap:12px";
+        row.appendChild(el("div", "tn", t.name)); var sp = el("div"); sp.style.flex = "1"; row.appendChild(sp);
+        row.appendChild(btn("v2-btn sec", "Reopen", function () { gUnarchive(t); }));
+        wrap.appendChild(row);
+      });
+    }
     $("main").appendChild(gTabbar());
   }
   function renderGTrip() {
     var t = gTrip(); var wrap = gShell(true); var top = gBrand(wrap, true);
-    top.insertBefore(btnIcon(G.back, "All trips", function () { gGo("home"); }), top.firstChild);
+    top.insertBefore(btnIcon(G.back, "Back", function () { gGo("home"); }), top.firstChild);
     wrap.appendChild(el("h1", "v2-h1", t.name));
     var c = gCounts(t);
     var sub = el("div", "v2-meta"); sub.textContent = (t.start || "No dates yet") + " · " + c.packed + " of " + c.need + " packed"; wrap.appendChild(sub);
