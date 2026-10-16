@@ -116,3 +116,14 @@ Confirmed with the user: when there is no account, the app opens into the Design
 Verified by `tests/browser.test.js`: a 6-tap, fully-offline walk (plan → profile → create → tick) that asserts **0 data-bearing API calls**, a trip with lists and a packed item stored under `"guest"`, and survival of an offline reload. `npm test`: 36. `npm run test:browser`: 7.
 
 Not yet built: the rest of the v2 screens (full Home, Trips list, Together/family, Member, Group, Admin, Settings, Item sheet, Templates, Departure-day surfacing), guest→account migration on sign-in, and applying the "% ready" → "% packed" relabel when the Together/Member screens are built.
+
+## 2026-10-16 — Shell accessibility enforced by tokens
+
+Before building more v2 screens: touch targets and the text floor are driven by `tokens.css` so all 14 screens inherit them.
+
+- `--tap: 44px` and `--tap-row-action: 48px` drive every interactive minimum in `v2.css` (buttons, links, inputs, tabs, choice/checkline rows, and the item-row tick/skip at 48px). Icon buttons are a full 44×44.
+- Text floor: `--fs-meta` and `--fs-micro` raised to **14px** (was 13/12), so no visible v2 text is below the 14px minimum. The design's smaller mono labels are overridden by the CLAUDE.md hard rule (same precedence as the "% ready" decision).
+- Fixed a real 320px overflow: the New-trip date inputs now shrink (`min-width:0`) and the two-date grid wraps (`auto-fit minmax`).
+- `tests/browser.test.js` gains a shared `a11y(page)` check — ≥44/48px targets, ≥14px text, no horizontal scroll — run at **320px** on each guest screen (Welcome, New trip, Trip). It will be reused on every future v2 screen.
+
+`npm test`: 36. `npm run test:browser`: 8.
