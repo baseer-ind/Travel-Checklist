@@ -231,6 +231,49 @@ async function a11y(page, label) {
     fs.rmSync(pub, { recursive: true, force: true });
   });
 
+  // Network-first regression guard: a changed shell asset must reach a returning visitor with NO
+  // cache-name bump (this is what the old cache-first handler failed to do — it served stale forever).
+  await test("network-first: a changed shell asset reaches a returning visitor without a cache bump", async () => {
+    const pub = fs.mkdtempSync(path.join(os.tmpdir(), "baggo-nf-"));
+    fs.cpSync(path.join(__dirname, "..", "public"), pub, { recursive: true });
+    const env3 = { ADMIN_USERNAME: "admin", ADMIN_PASSWORD: "x", FAMILY_CODE: "family", DATA_FILE: path.join(os.tmpdir(), "baggo-nf-" + Date.now() + ".json"), SESSION_SECRET: "n", PUBLIC_DIR: pub };
+    const srv = createServer(env3);
+    await new Promise((r) => srv.listen(0, r));
+    const b3 = "http://127.0.0.1:" + srv.address().port;
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const p = await ctx.newPage();
+
+    // first visit: install the SW and get it controlling the page; record the original canvas colour
+    await p.goto(b3 + "/", { waitUntil: "networkidle" });
+    await p.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await p.reload({ waitUntil: "networkidle" });
+    await p.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 8000 });
+    assert.equal(await p.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(239, 234, 225)", "original canvas cached");
+    const cacheBefore = await p.evaluate(async () => (await caches.keys()).filter((k) => k.indexOf("baggo-shell") === 0).sort());
+
+    // change a shell asset (tokens.css) on the server — no sw.js / cache-name change at all
+    const tPath = path.join(pub, "tokens.css");
+    const tText = fs.readFileSync(tPath, "utf8");
+    assert.ok(tText.includes("#EFEAE1"), "tokens.css has the canvas colour to change");
+    fs.writeFileSync(tPath, tText.replace("#EFEAE1", "#123456"));   // rgb(18,52,86)
+
+    // returning visit (online): the changed CSS is served without a manual cache bump
+    await p.reload({ waitUntil: "networkidle" });
+    await p.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await p.waitForFunction(() => getComputedStyle(document.body).backgroundColor === "rgb(18, 52, 86)", null, { timeout: 8000 });
+    const cacheAfter = await p.evaluate(async () => (await caches.keys()).filter((k) => k.indexOf("baggo-shell") === 0).sort());
+    assert.deepEqual(cacheAfter, cacheBefore, "cache name did NOT change — freshness came from network-first, not a bump");
+
+    // and it still works offline, served from the cache the network-first fetch refreshed
+    await ctx.setOffline(true);
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+
+    await ctx.close();
+    await new Promise((r) => srv.close(r));
+    fs.rmSync(pub, { recursive: true, force: true });
+  });
+
   // Journey 1: first open → first tick, no account, offline, nothing sent anywhere.
   await test("guest Journey 1: plan a trip and tick an item offline in <=6 taps, no network", async () => {
     const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });   // SW enabled: no mid-create reload now that claim is gone

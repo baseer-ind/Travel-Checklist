@@ -1,9 +1,9 @@
 // Service worker: precaches the app shell (and self-hosted font) so the page opens offline.
 // API calls always go to the network. A new version does NOT take over on its own — it waits
 // until the page tells it to (SKIP_WAITING), so the page can show an "Updated" toast first.
-// Bump this on every change to a shell asset (app.js, the CSS, db/sync.js) — the fetch handler is
-// cache-first, so without a new cache name returning users keep the old cached assets. Bumping forces
-// the new SW to re-cache the shell and the update flow (SKIP_WAITING → reload) to serve it.
+// Offline store for the precached shell. The fetch handler is network-first, so routine asset changes
+// reach returning visitors without touching this name. Bump it only when the SHELL list or the SW
+// logic itself changes, to re-precache and clean up old caches on activate.
 const CACHE = "baggo-shell-v6";
 const SHELL = [
   "/", "/index.html", "/fonts.css?v=1", "/style.css?v=1", "/tokens.css?v=1", "/v2.css?v=1",
@@ -30,11 +30,18 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin || url.pathname.startsWith("/api/")) return;
-  // cache-first for the shell; fall back to the network and backfill the cache
+  // Network-first for the same-origin shell: returning visitors always get the current code when
+  // online, so a changed asset reaches them with no cache-name bump. We re-cache every ok response as
+  // the offline copy, and fall back to the cache (and the cached shell for navigations) when offline.
+  // Subresources are fetched with cache:"no-cache" to force revalidation even if a CDN marked them
+  // immutable; a navigation Request can't take a RequestInit, so it uses a plain re-fetch (its own
+  // HTML is served no-cache). This replaces the old cache-first handler, which served stale assets
+  // forever because the asset URLs and the cache name never changed (see DECISIONS.md).
+  const fromNetwork = e.request.mode === "navigate" ? fetch(e.request) : fetch(e.request, { cache: "no-cache" });
   e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).then((r) => {
-      if (r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
+    fromNetwork.then((r) => {
+      if (r && r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
       return r;
-    }).catch(() => (e.request.mode === "navigate" ? caches.match("/index.html") : undefined)))
+    }).catch(() => caches.match(e.request).then((hit) => hit || (e.request.mode === "navigate" ? caches.match("/index.html") : undefined)))
   );
 });
