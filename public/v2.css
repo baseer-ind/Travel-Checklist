@@ -222,3 +222,57 @@
 .v2-cd.mini .v2-cd-box { padding: 7px 2px; background: var(--bg); }
 .v2-cd.mini .v2-cd-box b { font-size: 18px; }
 @media (prefers-reduced-motion: reduce) { .v2-cd-box b { transition: none; } }
+
+/* ================================================================
+   v1 PASTEL PALETTE restored over the v2 layout (requested change).
+   Only token VALUES and a few colour-only overrides change here;
+   every v2 component keeps its structure, size, spacing and layout.
+   The four accent MEANINGS (packed / skip / private / together) are
+   left intact — still distinct and contrast-tuned per CLAUDE.md.
+   Colours below are the original v1 tokens from style.css, verbatim.
+   ================================================================ */
+body.v2 {
+  /* v1 pastel vocabulary */
+  --peach: #ffd9c9; --mint: #cdeedc; --lavender: #dcd3f5;
+  --sky: #d2e8f7; --butter: #fff1c4; --rose: #ffd3df;
+
+  /* Surfaces remapped to the v1 look: pink page, white cards */
+  --bg: #fdf8fb;          /* app frame / page */
+  --surface: #ffffff;     /* cards, sheets, seg track */
+  --canvas: #f3ebf6;      /* desktop backdrop behind the centred frame */
+  --line: #efe3f1;        /* soft pink-lavender hairline */
+  --line-strong: #dcd3f5; /* v1 lavender border */
+
+  /* Ink -> v1 plum (contrast-checked on white and on #fdf8fb) */
+  --ink: #3b3552; --ink-2: #4a4360; --slate: #635c7d; --muted: #6e6786;
+
+  /* Links / focus -> v1 purple */
+  --focus: #7d6bd6; --focus-bg: #efeafc;
+}
+
+/* Pastel gradient blobs on the page, anchored to the frame so they
+   always show within the visible column at every width. */
+body.v2 .v2-wrap {
+  background-image:
+    radial-gradient(circle at 8% 3%, var(--lavender) 0, transparent 30%),
+    radial-gradient(circle at 96% 10%, var(--peach) 0, transparent 26%),
+    radial-gradient(circle at 74% 100%, var(--mint) 0, transparent 30%);
+}
+
+/* Primary buttons -> peach with plum ink (v1). Secondary & danger keep theirs. */
+body.v2 .v2-btn:not(.sec) { background: var(--peach); color: var(--ink); }
+body.v2 .v2-btn:not(.sec):hover { filter: brightness(.96); }
+
+/* White inputs on the pink page, lavender border inherited from --line-strong */
+body.v2 .v2-input { background: #ffffff; }
+
+/* Classic v1 "white card on pink page" for list/row cards and the activity feed */
+body.v2 .v2-rowcard, body.v2 .v2-feedrow { background: #ffffff; }
+
+/* Countdown boxes take the v1 sky / lavender tint */
+body.v2 .v2-cd-box { background: var(--sky); border-color: #c2dcf0; }
+body.v2 .v2-cd.mini .v2-cd-box { background: var(--lavender); border-color: #cfc2ee; }
+
+/* Selected tabs -> lavender (v1 feel) rather than plum-on-dark */
+body.v2 .v2-tab[aria-selected="true"] { background: var(--lavender); color: var(--ink); border-color: #c3b4ef; }
+body.v2 .v2-seg button[aria-selected="true"] { background: #ffffff; color: var(--ink); }
