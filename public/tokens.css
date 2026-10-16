@@ -31,8 +31,8 @@
   --fs-lg: 16px;
   --fs-body: 15px;     /* default body */
   --fs-sm: 14px;       /* smallest body-weight text allowed */
-  --fs-meta: 13px;     /* labels / meta only */
-  --fs-micro: 12px;    /* uppercase mono labels only, never prose */
+  --fs-meta: 14px;     /* labels / meta — held at the 14px floor (CLAUDE.md) */
+  --fs-micro: 14px;    /* small labels / counts — also at the 14px floor */
   --lh-tight: 1.15;
   --lh-body: 1.45;
 

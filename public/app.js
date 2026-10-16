@@ -1297,7 +1297,7 @@
     }
     $("main").appendChild(gTabbar());
   }
-  function btnIcon(d, label, fn) { var b = el("button", "v2-link"); b.type = "button"; b.setAttribute("aria-label", label); b.style.cssText = "display:flex;align-items:center;padding:10px 8px 10px 0"; b.appendChild(gsvg(d)); if (fn) b.addEventListener("click", fn); return b; }
+  function btnIcon(d, label, fn) { var b = el("button", "v2-link"); b.type = "button"; b.setAttribute("aria-label", label); b.style.cssText = "display:flex;align-items:center;justify-content:center;min-width:var(--tap);min-height:var(--tap);padding:0;margin-inline-start:-6px"; b.appendChild(gsvg(d)); if (fn) b.addEventListener("click", fn); return b; }
 
   /* ================= service worker ================= */
   function registerSW() {

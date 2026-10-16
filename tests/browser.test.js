@@ -12,6 +12,37 @@ let passed = 0, failed = 0;
 async function test(name, fn) { try { await fn(); passed++; console.log("  ✓ " + name); } catch (e) { failed++; console.log("  ✗ " + name + "\n      " + (e.stack || e).toString().split("\n").slice(0, 4).join("\n      ")); } }
 const assert = require("assert");
 
+// Shared check: on the current v2 screen, every touch target is >=44px (row actions >=48px),
+// all visible text is >=14px, and there is no horizontal scroll. Asserts on any violation.
+async function a11y(page, label) {
+  const bad = await page.evaluate(() => {
+    const out = { hscroll: null, targets: [], text: [] };
+    const root = document.getElementById("main");
+    if (!root) return out;
+    if (document.documentElement.scrollWidth > window.innerWidth + 1) out.hscroll = document.documentElement.scrollWidth + " > " + window.innerWidth;
+    const vis = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none"; };
+    const skip = (el) => el.closest(".toast, .v2-toast, #toast");
+    const tsel = ["button:not([disabled])", "a[href]", "[role=checkbox]", "[role=radio]", "[role=tab]", "[role=switch]", "label.v2-checkline", "input.v2-input"].map((s) => "#main " + s).join(", ");
+    document.querySelectorAll(tsel).forEach((el) => {
+      if (!vis(el) || skip(el)) return;
+      const r = el.getBoundingClientRect();
+      const min = (el.classList.contains("v2-check") || el.classList.contains("v2-skip")) ? 48 : 44;
+      if (r.width < min - 0.5 || r.height < min - 0.5) out.targets.push(((el.getAttribute("aria-label") || el.textContent || el.className).trim().slice(0, 32)) + " " + Math.round(r.width) + "x" + Math.round(r.height) + " <" + min);
+    });
+    root.querySelectorAll("*").forEach((el) => {
+      if (!vis(el) || skip(el)) return;
+      let t = ""; el.childNodes.forEach((n) => { if (n.nodeType === 3) t += n.textContent; });
+      if (!t.trim()) return;
+      const fs = parseFloat(getComputedStyle(el).fontSize);
+      if (fs < 13.5) out.text.push(t.trim().slice(0, 24) + " @" + fs + "px");
+    });
+    return out;
+  });
+  assert.equal(bad.hscroll, null, label + ": horizontal scroll (" + bad.hscroll + ")");
+  assert.equal(bad.targets.length, 0, label + ": small targets " + JSON.stringify(bad.targets));
+  assert.equal(bad.text.length, 0, label + ": small text " + JSON.stringify(bad.text));
+}
+
 (async () => {
   try { require("fs").unlinkSync(env.DATA_FILE); } catch (e) {}
   const server = createServer(env);
@@ -224,6 +255,25 @@ const assert = require("assert");
     await pg.reload({ waitUntil: "domcontentloaded" });
     await pg.getByRole("heading", { name: "Weekend in Lisbon" }).waitFor({ timeout: 8000 });
 
+    await ctx.close();
+  });
+
+  // Shell a11y: 44/48px targets, 14px text floor, no horizontal scroll — checked at 320px on each v2 screen.
+  await test("shell: targets >=44/48px, text >=14px, no h-scroll at 320px", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 320, height: 720 } });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await a11y(pg, "Welcome");
+    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await pg.getByRole("heading", { name: "Plan a trip" }).waitFor({ timeout: 8000 });
+    await pg.getByRole("radio", { name: /Family/ }).click();   // show starter lists
+    await a11y(pg, "New trip");
+    await pg.getByLabel("Trip name").fill("Trip to Qadian");
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.getByRole("heading", { name: "Trip to Qadian" }).waitFor({ timeout: 8000 });
+    await pg.waitForTimeout(100);
+    await a11y(pg, "Trip");
     await ctx.close();
   });
 
