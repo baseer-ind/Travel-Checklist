@@ -401,7 +401,7 @@
     var form = document.createElement("form"); form.noValidate = true; form.style.cssText = "display:flex;flex-direction:column;gap:12px"; card.appendChild(form);
     var name = v2Field("aName", "Your name", "text", "username"), pw = v2PwField("aPass", "Password", signup ? "new-password" : "current-password");
     form.appendChild(name.wrap); form.appendChild(pw.wrap);
-    var code = null; if (signup) { code = v2Field("aCode", "Family code (ask the admin)", "text", "off"); form.appendChild(code.wrap); }
+    var code = null; if (signup) { code = v2Field("aCode", "Family code — optional (you can also join a family later)", "text", "off"); form.appendChild(code.wrap); }
     var go = el("button", "v2-btn full", signup ? "Create my account" : "Log in"); go.type = "submit"; go.id = "aSubmit"; form.appendChild(go);
     if (signup) {
       var agree = el("p", "v2-fine"); agree.appendChild(document.createTextNode("By creating an account you agree to the "));
@@ -421,7 +421,7 @@
         err.textContent = errText(e); err.style.display = "block"; go.disabled = false; go.textContent = signup ? "Create my account" : "Log in";
       });
     });
-    card.appendChild(el("p", "v2-fine", signup ? "Your family and the admin can see your lists, except items you mark private." : "Forgot your password? Ask the admin to reset it for you."));
+    card.appendChild(el("p", "v2-fine", signup ? "Create a free account to save your trips and sync across devices. Join a family or group anytime to pack together." : "Forgot your password? Ask the admin to reset it for you."));
     var links = el("div", "v2-linkrow");
     links.appendChild(btn("v2-link", "Have a sharing code? View a list", askSharedCode));
     links.appendChild(btn("v2-link", "Continue without an account", function () { enterGuest(); }));
@@ -721,6 +721,17 @@
       family = r; unread = 0; famErr = null; famReconnect = false; render();
     }).catch(function (e) { famErr = errText(e); render(); });
   }
+  function famCreate() {
+    api("POST", "/api/family/create", {}).then(function (r) {
+      family = r; unread = 0; famErr = null; famReconnect = false; render();
+    }).catch(function (e) { famErr = errText(e); render(); });
+  }
+  // Copy/share use the RAW code (what joins); the screen shows it prettified with fmtCode.
+  function famCopyCode(code) { try { navigator.clipboard.writeText(code); toast("Code copied"); } catch (e) { toast("Press and hold the code to copy it."); } }
+  function famShare(code) {
+    if (navigator.share) { navigator.share({ title: "Baggo", text: "Join my family on Baggo — our code is " + code, url: location.origin }).catch(function () {}); }
+    else famCopyCode(code);
+  }
   function renderFamily(main) {
     var wrap = gShell(false);
     var top = gBrand(wrap, false);
@@ -730,15 +741,30 @@
     if (!family.circle || famReconnect) {
       var c = el("div", "v2-card"); c.style.cssText = "display:flex;flex-direction:column;gap:12px";
       c.appendChild(el("h2", "v2-h2", "Connect with your family"));
-      c.appendChild(el("p", "v2-sub", "Everyone who enters the same family code is connected: you'll see who's going where and what they've packed, and they'll see you. Your private items, lists and trips stay private."));
+      c.appendChild(el("p", "v2-sub", "Everyone in the same family is connected: you'll see who's going where and what they've packed, and they'll see you. Your private items, lists and trips stay private."));
+      // Option 1 — create a new family and get a code to share.
+      c.appendChild(btn("v2-btn full", "Create a family", famCreate));
+      c.appendChild(el("p", "v2-sub", "Start a new family and get a code to share with everyone."));
+      // Option 2 — join an existing family with a code someone shared.
+      c.appendChild(el("h2", "v2-h2", "Join a family"));
       var f = el("label", "v2-field"); f.appendChild(el("span", null, "Family code"));
       var inp = el("input", "v2-input"); inp.setAttribute("aria-label", "Family code"); inp.placeholder = "family code"; inp.autocomplete = "off"; if (famErr) inp.setAttribute("aria-invalid", "true");
       inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); famConnect(inp.value); } });
       f.appendChild(inp); c.appendChild(f);
       if (famErr) { var er = el("p", "v2-err", famErr); er.setAttribute("role", "alert"); c.appendChild(er); }
-      c.appendChild(btn("v2-btn full", "Connect", function () { famConnect(inp.value); }));
+      c.appendChild(btn("v2-btn sec full", "Join a family", function () { famConnect(inp.value); }));
       if (family.circle) c.appendChild(btn("v2-btn sec full", "Cancel", function () { famErr = null; famReconnect = false; render(); }));
       wrap.appendChild(c); return;
+    }
+    // The family's shared join code, prominent near the top, with Copy / Share.
+    if (family.code) {
+      var cc = el("div", "v2-share");
+      cc.appendChild(el("div", "v2-sub", "Your family code — share it to invite others"));
+      cc.appendChild(el("div", "code", fmtCode(family.code)));
+      var crow = el("div", "row");
+      crow.appendChild(btn("v2-btn sec", "Copy code", function () { famCopyCode(family.code); }));
+      crow.appendChild(btn("v2-btn sec", "Share", function () { famShare(family.code); }));
+      cc.appendChild(crow); wrap.appendChild(cc);
     }
     var n = family.circle.members;
     wrap.appendChild(el("p", "v2-sub", n + (n === 1 ? " person is" : " people are") + " connected. Tap a name to see what they chose and packed."));
@@ -1214,7 +1240,7 @@
   }
   // Signed-in New-trip: the v2 three-field flow (name, dates, who's going → ready-made lists),
   // replacing the v1 modal. Nothing is created until Create — no auto-create.
-  function newTripV2() { ntForm = { name: "", start: "", end: "", noDates: false, profile: null, pick: {}, err: "" }; appView = "new"; closeAppMenu(); render(); }
+  function newTripV2() { ntForm = { name: "", start: "", end: "", noDates: false, mode: null, template: null, pick: {}, err: "" }; appView = "new"; closeAppMenu(); render(); }
   function renderNewTripV2() {
     var f = ntForm; var wrap = gShell(false);
     appHeader(wrap, function () { ntForm = null; appGo("home"); });
@@ -1319,7 +1345,7 @@
     box.appendChild(sum);
     st.forEach(function (x) {
       var r = el("div", "essrow"); r.appendChild(el("span", null, x.e.emoji + " " + x.e.label));
-      if (x.st === "missing") { var b = btn("v2-btn sec", "Add", function () { addEssential(x.e); }); b.setAttribute("aria-label", "Add " + x.e.label + " to your list"); b.style.minHeight = "36px"; r.appendChild(b); }
+      if (x.st === "missing") { var b = btn("v2-btn sec", "Add", function () { addEssential(x.e); }); b.setAttribute("aria-label", "Add " + x.e.label + " to your list"); b.style.minHeight = "var(--tap)"; r.appendChild(b); }
       else r.appendChild(el("span", "st", x.st === "ok" ? "✓ packed" : "to pack"));
       box.appendChild(r);
     });
@@ -1446,44 +1472,44 @@
      No account, no network needed. Trips live on the device (IndexedDB, owner "guest");
      nothing is sent anywhere. Signing in (v1) is one tap away for family/groups. */
   var GUEST = "guest", guestMode = false, gview = "welcome", gform = null, gcat = "all";
-  var PROFILES = [
-    ["family", "Family", "One organiser plus the family, each on their own phone"],
-    ["pilgrimage", "Pilgrimage / religious group", "A jamaat, Umrah or church trip with a coordinator"],
-    ["solo_dom", "Solo — domestic", "A quick trip at home; reuse last time"],
-    ["solo_int", "Solo — international", "First or occasional international travel"],
+  // Ready-made trip templates: each has selectable lists. List shape: [name, emoji, kind,
+  // [[emoji, name, qty?, mustNotForget?], ...]]. No list states a visa/health/entry fact (CLAUDE.md).
+  var TEMPLATES = [
+    { id:"summer", emoji:"☀️", label:"Summer trip", lists:[
+      ["Clothes","👕","packing",[["👕","T-shirts & light tops",4],["🩳","Shorts / light bottoms",3],["🩱","Swimwear"],["🧢","Hat / cap"],["🕶️","Sunglasses"],["🩴","Sandals / flip-flops"]]],
+      ["Sun & skin","🧴","packing",[["🧴","Sunscreen",1,true],["🧴","After-sun / moisturiser"],["💧","Water bottle"],["🦟","Mosquito repellent"]]],
+      ["Documents","🛂","documents",[["🛂","ID / passport",1,true],["🎟️","Tickets & bookings"],["💳","Wallet & cards"]]],
+      ["Essentials","🎒","packing",[["📱","Phone"],["🔌","Charger & power bank",1,true],["💊","Medicines"],["🪥","Toiletries bag"]]] ]},
+    { id:"winter", emoji:"❄️", label:"Winter trip", lists:[
+      ["Warm clothes","🧥","packing",[["🧥","Heavy jacket / coat",1,true],["🧶","Sweaters / jumpers",2],["🩲","Thermals / base layers"],["🧦","Woollen socks",3],["🧤","Gloves"],["🧣","Scarf & beanie"]]],
+      ["Cold-weather care","🧴","packing",[["🧴","Moisturiser"],["💄","Lip balm"],["💊","Cold & flu medicine"]]],
+      ["Documents","🛂","documents",[["🛂","ID / passport",1,true],["🎟️","Tickets & bookings"],["💳","Wallet & cards"]]],
+      ["Essentials","🎒","packing",[["📱","Phone"],["🔌","Charger & power bank",1,true],["🪥","Toiletries bag"],["👟","Warm shoes / boots"]]] ]},
+    { id:"beach", emoji:"🏖️", label:"Beach / holiday", lists:[
+      ["Beach bag","🏖️","packing",[["🩱","Swimwear",2],["🏖️","Beach towel"],["🧴","Sunscreen",1,true],["🕶️","Sunglasses"],["🧢","Hat"],["🩴","Flip-flops"]]],
+      ["Clothes","👕","packing",[["👕","Light tops",4],["🩳","Shorts / dresses"],["👗","One nice outfit"],["🧥","Light cover-up for evenings"]]],
+      ["Documents","🛂","documents",[["🛂","ID / passport",1,true],["🎟️","Tickets & bookings"],["💳","Wallet & cards"]]],
+      ["Essentials","🎒","packing",[["📱","Phone"],["🔌","Charger & power bank",1,true],["💊","Medicines"],["💧","Water bottle"]]] ]},
+    { id:"business", emoji:"💼", label:"Business trip", lists:[
+      ["Work","💼","packing",[["💻","Laptop & charger",1,true],["🔌","Adapters & cables"],["📓","Notebook & pen"],["🪪","Work ID / badge"],["🪙","Business cards"]]],
+      ["Clothes","👔","packing",[["👔","Formal outfits",2],["👕","Shirts",3],["👞","Formal shoes"],["🧥","Blazer"],["🧰","Grooming kit"]]],
+      ["Documents","🛂","documents",[["🛂","ID / passport",1,true],["🎟️","Tickets & bookings"],["💳","Wallet & cards"],["🧾","Expense receipts folder"]]],
+      ["Essentials","🎒","packing",[["📱","Phone"],["🔋","Power bank",1,true],["💊","Medicines"]]] ]},
+    { id:"weekend", emoji:"🎒", label:"Weekend getaway", lists:[
+      ["Weekend bag","🎒","packing",[["👕","Tops",2],["🩳","Bottoms",1],["🩲","Underwear",2],["🧦","Socks",2],["🌙","Nightwear"]]],
+      ["Toiletries","🧴","packing",[["🪥","Toothbrush & toothpaste"],["🧴","Mini toiletries"],["💊","Medicines"]]],
+      ["Essentials","🔑","packing",[["📱","Phone"],["🔌","Charger",1,true],["💳","Wallet & cards"],["🔑","Keys"]]] ]},
+    { id:"family", emoji:"👨‍👩‍👧", label:"Family trip", lists:[
+      ["Family packing","👨‍👩‍👧","packing",[["👕","Clothes for everyone"],["🧥","Jackets"],["🩲","Underwear & socks"],["🪥","Toiletries bag"],["💊","Medicines"]]],
+      ["Kids","🧸","packing",[["🍼","Snacks & bottles"],["🧸","Comfort toy"],["🩹","Plasters"],["👶","Spare clothes"],["🎧","Headphones / tablet"]]],
+      ["Documents","🛂","documents",[["🛂","Passports / IDs",1,true],["🎟️","Tickets & bookings"],["💳","Wallet & cards"]]],
+      ["Before you leave","🔑","leave",[["🔑","Lock up"],["🔥","Turn off the gas"],["🚰","Turn off taps"],["🪴","Water plants / arrange pets"]]] ]},
+    { id:"pilgrimage", emoji:"🕋", label:"Pilgrimage / group", lists:[
+      ["Essentials","📋","packing",[["🪪","ID card",1,true],["👝","Pouch / belt bag"],["💧","Water bottle"],["📿","Prayer items"]]],
+      ["Modesty & prayer","🧕","packing",[["🧕","Modest clothing"],["🧦","Extra socks"],["🧴","Travel prayer mat"],["🧣","Scarf / shawl"]]],
+      ["Long journey","🚌","custom",[["🍿","Snacks for the journey"],["🎧","Headphones"],["🔌","Power bank",1,true],["💊","Travel-sickness tablets"]]],
+      ["Documents","🛂","documents",[["🛂","Passport / ID",1,true],["🎟️","Group booking reference"],["💳","Cash & cards"]]] ]}
   ];
-  // starter lists: [name, emoji, kind, [[emoji, name, qty?, mustNotForget?], ...]]
-  var UNIVERSAL = [
-    ["Documents", "🛂", "documents", [["🛂", "Passport / ID", 1, true], ["🎟️", "Tickets & bookings"], ["💳", "Wallet & cards"], ["💵", "Cash / local currency"]]],
-    ["Packing basics", "🎒", "packing", [["👕", "Clothes"], ["🩲", "Underwear & socks"], ["🪥", "Toothbrush & toothpaste"], ["🔌", "Phone charger", 1, true], ["💊", "Medicines"]]],
-    ["Before you leave", "🔑", "leave", [["🔑", "Lock doors & windows"], ["🔌", "Unplug appliances"], ["🔥", "Turn off the gas"], ["🪪", "Passport / ID & tickets", 1, true]]],
-  ];
-  var STARTERS = {
-    family: [
-      ["Family packing", "👨‍👩‍👧", "packing", [["👕", "Clothes for everyone"], ["🧥", "Jackets"], ["🩲", "Underwear & socks"], ["🪥", "Toiletries bag"], ["💊", "Medicines"]]],
-      ["Kids", "🧸", "packing", [["🍼", "Snacks & bottles"], ["🧸", "Comfort toy"], ["🩹", "Plasters"], ["👶", "Spare clothes"], ["🎧", "Headphones"]]],
-      ["Documents", "🛂", "documents", [["🛂", "Passports / IDs", 1, true], ["🎟️", "Tickets & bookings"], ["💳", "Wallet & cards"]]],
-      ["Home", "🏠", "home", [["🪴", "Water the plants"], ["🗑️", "Take out the trash"], ["🔌", "Unplug appliances"], ["🐱", "Arrange pet care"]]],
-      ["Before you leave", "🔑", "leave", [["🔑", "Lock up"], ["🔥", "Turn off the gas"], ["🚰", "Turn off taps"]]],
-    ],
-    pilgrimage: [
-      ["Essentials", "📋", "packing", [["🪪", "ID card", 1, true], ["👝", "Pouch / belt bag"], ["💧", "Water bottle"], ["📿", "Prayer items"]]],
-      ["Modesty & prayer", "🧕", "packing", [["🧕", "Modest clothing"], ["🧦", "Extra socks"], ["🧴", "Travel prayer mat"], ["🧣", "Scarf / shawl"]]],
-      ["Long journey", "🚌", "custom", [["🍿", "Snacks for the journey"], ["🎧", "Headphones"], ["🔌", "Power bank", 1, true], ["💊", "Travel-sickness tablets"]]],
-      ["Documents", "🛂", "documents", [["🛂", "Passport / ID", 1, true], ["🎟️", "Group booking reference"], ["💳", "Cash & cards"]]],
-    ],
-    solo_dom: [
-      ["Weekend bag", "🎒", "packing", [["👕", "T-shirts", 2], ["🩲", "Underwear", 2], ["🧦", "Socks", 2], ["🪥", "Toothbrush & toothpaste"], ["🔌", "Phone charger", 1, true]]],
-      ["Work trip", "💼", "packing", [["👔", "Smart outfit"], ["💻", "Laptop & charger", 1, true], ["🪪", "Work ID"]]],
-      ["Before you leave", "🔑", "leave", [["🔑", "Lock up"], ["🔌", "Unplug"], ["🗑️", "Trash out"]]],
-    ],
-    solo_int: [
-      ["International documents", "🛂", "documents", [["🛂", "Passport", 1, true], ["📄", "Check: visa / entry rules"], ["💉", "Check: vaccinations needed"], ["🧾", "Travel insurance"]]],
-      ["Money", "💳", "money", [["💳", "Backup bank card", 1, true], ["💵", "Some local currency"], ["📱", "Banking app set up"]]],
-      ["Digital readiness", "📱", "digital", [["📲", "Offline maps downloaded"], ["🔌", "Plug adapter"], ["🔋", "Power bank"], ["☁️", "Docs saved offline"]]],
-      ["Packing basics", "🎒", "packing", [["👕", "Clothes"], ["🪥", "Toiletries"], ["💊", "Medicines"]]],
-    ],
-  };
   function gsvg(d, w) { var s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("width", 18); s.setAttribute("height", 18); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", w || 2); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true"); var pth = document.createElementNS("http://www.w3.org/2000/svg", "path"); pth.setAttribute("d", d); s.appendChild(pth); return s; }
   var G = { tick: "M5 12.5 10 17.5 19 7", skip: "M18 6 6 18", star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.6 1-5.8L3.5 9.7l5.9-.9z", back: "M15 6l-6 6 6 6", plus: "M12 5v14M5 12h14", home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z", bag: "M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z", people: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20a7 7 0 0 1 14 0M17 11a3 3 0 1 0-1-5.8M22 20a7 7 0 0 0-5-6.7",
     eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", eyeoff: "M3 3l18 18 M10.6 10.6a3 3 0 0 0 4.2 4.2 M9.8 5.1A9.6 9.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9 M6 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 3-.5",
@@ -1521,14 +1547,24 @@
 
   // Build a trip from a New-trip form (shared by guest and signed-in). Nothing is created until
   // the person taps Create — the chosen starter lists only, or one empty "Packing" list.
+  function templateById(id) { for (var i = 0; i < TEMPLATES.length; i++) if (TEMPLATES[i].id === id) return TEMPLATES[i]; return null; }
   function buildTripFromForm(f) {
-    var src = f.profile ? STARTERS[f.profile] : UNIVERSAL;
-    var lists = src.filter(function (t) { return f.pick[t[0]] !== false; }).map(function (t) {
-      return { id: nid(), name: t[0], emoji: t[1], kind: t[2], items: t[3].map(function (it) { var o = { id: nid(), emoji: it[0], name: it[1], state: "todo" }; if (it[2]) o.qty = it[2]; if (it[3]) o.mnf = true; return o; }) };
-    });
+    var lists = [];
+    if (f.mode === "ready" && f.template) {
+      var tpl = templateById(f.template);
+      var src = tpl ? tpl.lists : [];
+      lists = src.filter(function (t) { return f.pick[t[0]] !== false; }).map(function (t) {
+        return { id: nid(), name: t[0], emoji: t[1], kind: t[2], items: t[3].map(function (it) { var o = { id: nid(), emoji: it[0], name: it[1], state: "todo" }; if (it[2]) o.qty = it[2]; if (it[3]) o.mnf = true; return o; }) };
+      });
+    }
+    // Start blank (or a ready-made trip with every list unticked) → one empty Packing list.
     if (!lists.length) lists = [{ id: nid(), name: "Packing", emoji: "🎒", kind: "packing", items: [] }];
+    // Every trip carries the universal "Before you leave" checklist (normalize() enforces this on load;
+    // adding it at creation keeps new trips born-normalized, so a two-device pull never triggers a
+    // migration-save that could clobber a concurrent edit).
+    if (!lists.some(function (l) { return l.kind === "leave"; })) lists.push(mkLeaveList());
     var start = f.noDates ? null : (f.start || null);
-    return { id: nid(), name: f.name.trim(), created: Date.now(), packedAt: null, start: start, end: f.noDates ? null : (f.end || null), travelDate: start, profile: f.profile || null, lists: lists };
+    return { id: nid(), name: f.name.trim(), created: Date.now(), packedAt: null, start: start, end: f.noDates ? null : (f.end || null), travelDate: start, profile: (f.mode === "ready" ? f.template : null) || null, lists: lists };
   }
   // The three New-trip fields (name, dates, who's going → starter lists) rendered into a wrap.
   // `rerender` redraws the screen after a toggle; the caller adds its own header and Create button.
@@ -1545,22 +1581,37 @@
     grid.appendChild(ds); grid.appendChild(de); datesF.appendChild(grid);
     var nd = el("label", "v2-checkline"); var ndi = document.createElement("input"); ndi.type = "checkbox"; ndi.checked = f.noDates; ndi.addEventListener("change", function () { f.noDates = ndi.checked; rerender(); }); nd.appendChild(ndi); nd.appendChild(document.createTextNode("I don't know my dates yet")); datesF.appendChild(nd);
     wrap.appendChild(datesF);
-    var who = el("div", "v2-field"); who.appendChild(el("span", null, "Who's going?"));
-    var choices = el("div", "v2-choices"); choices.setAttribute("role", "radiogroup"); choices.setAttribute("aria-label", "Who's going");
-    PROFILES.forEach(function (p) {
-      var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.profile === p[0] ? "true" : "false");
+    // Start your lists: a clear two-way choice — a blank list, or pick a ready-made template.
+    var start = el("div", "v2-field"); start.appendChild(el("span", null, "Start your lists"));
+    var choices = el("div", "v2-choices"); choices.setAttribute("role", "radiogroup"); choices.setAttribute("aria-label", "Start your lists");
+    [["blank", "Start blank", "One empty “Packing” list to fill yourself"], ["ready", "Use a ready-made list", "Pick a template and tick what to include"]].forEach(function (p) {
+      var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.mode === p[0] ? "true" : "false");
       var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
       var ct = el("span", "ct"); ct.appendChild(el("b", null, p[1])); ct.appendChild(el("small", null, p[2])); b.appendChild(ct);
-      b.addEventListener("click", function () { f.profile = p[0]; f.pick = {}; rerender(); });
+      b.addEventListener("click", function () { f.mode = p[0]; if (p[0] === "blank") { f.template = null; f.pick = {}; } rerender(); });
       choices.appendChild(b);
     });
-    who.appendChild(choices); wrap.appendChild(who);
-    var src = f.profile ? STARTERS[f.profile] : UNIVERSAL;
+    start.appendChild(choices); wrap.appendChild(start);
+    if (f.mode !== "ready") return;
+    // Template picker: selectable cards (emoji + name + "N lists").
+    var tp = el("div", "v2-field"); tp.appendChild(el("span", null, "Choose a ready-made list"));
+    var cards = el("div", "v2-choices"); cards.setAttribute("role", "radiogroup"); cards.setAttribute("aria-label", "Ready-made lists");
+    TEMPLATES.forEach(function (tpl) {
+      var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.template === tpl.id ? "true" : "false");
+      var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
+      var ct = el("span", "ct"); ct.appendChild(el("b", null, tpl.emoji + "  " + tpl.label)); ct.appendChild(el("small", null, tpl.lists.length + " lists")); b.appendChild(ct);
+      b.addEventListener("click", function () { f.template = tpl.id; f.pick = {}; rerender(); });
+      cards.appendChild(b);
+    });
+    tp.appendChild(cards); wrap.appendChild(tp);
+    var chosen = templateById(f.template);
+    if (!chosen) return;
+    // The chosen template's lists, tick-to-include (nothing is added without you).
     var sl = el("div", "v2-field");
-    sl.appendChild(el("span", null, f.profile ? "Starter lists" : "We'll add three basics"));
+    sl.appendChild(el("span", null, "Lists in “" + chosen.label + "”"));
     sl.appendChild(el("p", "v2-sub", "Tick what to add — nothing is added without you."));
     var box = el("div"); box.style.cssText = "display:flex;flex-direction:column;gap:8px";
-    src.forEach(function (t) {
+    chosen.lists.forEach(function (t) {
       var on = f.pick[t[0]] !== false;
       var b = el("button", "v2-starter"); b.type = "button"; b.setAttribute("role", "checkbox"); b.setAttribute("aria-checked", on ? "true" : "false");
       var bx = el("span", "box"); if (on) bx.appendChild(gsvg(G.tick, 3)); b.appendChild(bx);
@@ -1613,7 +1664,7 @@
     a.sort(function (x, y) { var dx = gDaysUntil(x), dy = gDaysUntil(y); var rx = dx == null ? 1e8 : dx < 0 ? 1e7 - dx : dx; var ry = dy == null ? 1e8 : dy < 0 ? 1e7 - dy : dy; return rx - ry || (y.created || 0) - (x.created || 0); });
     return a[0];
   }
-  function gNewForm() { gform = { name: "", start: "", end: "", noDates: false, profile: null, pick: {}, err: "" }; gGo("new"); }
+  function gNewForm() { gform = { name: "", start: "", end: "", noDates: false, mode: null, template: null, pick: {}, err: "" }; gGo("new"); }
   function gShell(hasTabs) {
     document.body.className = "v2";
     var side = $("side"), scrim = $("scrim"); if (side) side.style.display = "none"; if (scrim) scrim.style.display = "none";   // hide v1 chrome in guest mode
@@ -1657,12 +1708,12 @@
     hero.appendChild(el("h1", "v2-h1", "Pack for your next trip, together."));
     hero.appendChild(el("p", "v2-sub", "Make a list for anything, see who's ready, and never forget the charger again. No account needed to start, and it all works offline."));
     var row = el("div"); row.style.cssText = "display:flex;flex-direction:column;gap:10px;width:100%;margin-top:8px";
-    row.appendChild(btn("v2-btn full", "Plan a trip", function () { gform = { name: "", start: "", end: "", noDates: false, profile: null, pick: {}, err: "" }; gGo("new"); }));
+    row.appendChild(btn("v2-btn full", "Plan a trip", function () { gform = { name: "", start: "", end: "", noDates: false, mode: null, template: null, pick: {}, err: "" }; gGo("new"); }));
     row.appendChild(btn("v2-btn sec full", "Try a sample trip", gSampleTrip));
     hero.appendChild(row); wrap.appendChild(hero);
   }
   function gSampleTrip() {
-    gform = { name: "Weekend in Lisbon", start: "", end: "", noDates: true, profile: "solo_dom", pick: {}, err: "" };
+    gform = { name: "Weekend in Lisbon", start: "", end: "", noDates: true, mode: "ready", template: "weekend", pick: {}, err: "" };
     gCreateTrip();
   }
   function renderGNew() {

@@ -65,13 +65,17 @@ async function a11y(page, label) {
     await pg.getByRole("button", { name: "Log in" }).click();
     await pg.locator("#main h1", { hasText: "Hi " + name }).first().waitFor({ timeout: 8000 });
   }
-  // Create a trip through the v2 New-trip screen (Home "Plan a trip" → name + optional profile → Create),
-  // landing on the v2 Trip. With no profile the universal starter lists are used; nothing is auto-created.
-  async function createTrip(pg, name, profile) {
+  // Create a trip through the v2 New-trip screen (Home "Plan a trip" → name → Start blank or a ready-made
+  // template → Create), landing on the v2 Trip. With no template it starts blank (one empty Packing list);
+  // nothing is auto-created until Create.
+  async function createTrip(pg, name, template) {
     await pg.getByRole("button", { name: /^Plan a/ }).click();
     await pg.locator("#main h1", { hasText: "Plan a trip" }).first().waitFor({ timeout: 8000 });
     await pg.getByLabel("Trip name").fill(name);
-    if (profile) await pg.getByRole("radio", { name: profile }).click();
+    if (template) {
+      await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
+      await pg.getByRole("radio", { name: new RegExp(template) }).click();
+    }
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: name }).first().waitFor({ timeout: 8000 });
   }
@@ -298,8 +302,8 @@ async function a11y(page, label) {
     await tap(pg.getByRole("button", { name: "Plan a trip" }));            // 1
     await pg.getByRole("heading", { name: "Plan a trip" }).waitFor({ timeout: 8000 });
     await pg.getByLabel("Trip name").fill("Weekend in Lisbon");            // typing (not a tap)
-    await tap(pg.getByRole("radio", { name: /Solo — domestic/ }));         // 2 (profile)
-    await tap(pg.getByRole("checkbox", { name: /Work trip/ }));            // 3 (drop a starter list)
+    await tap(pg.getByRole("radio", { name: "Use a ready-made list" }));   // 2 (choose ready-made)
+    await tap(pg.getByRole("radio", { name: /Summer trip/ }));             // 3 (pick a template)
     await tap(pg.getByRole("button", { name: "Create trip" }));           // 4
     await pg.waitForTimeout(300);
     await pg.locator("#main h1", { hasText: "Weekend in Lisbon" }).first().waitFor({ timeout: 8000 });
@@ -343,7 +347,8 @@ async function a11y(page, label) {
     await a11y(pg, "Welcome");
     await pg.getByRole("button", { name: "Plan a trip" }).click();
     await pg.getByRole("heading", { name: "Plan a trip" }).waitFor({ timeout: 8000 });
-    await pg.getByRole("radio", { name: /Family/ }).click();   // show starter lists
+    await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
+    await pg.getByRole("radio", { name: /Family trip/ }).click();   // reveal the template's lists
     await a11y(pg, "New trip");
     await pg.getByLabel("Trip name").fill("Trip to Tokyo");
     await pg.getByRole("button", { name: "Create trip" }).click();
@@ -360,7 +365,8 @@ async function a11y(page, label) {
     await pg.goto(base + "/", { waitUntil: "networkidle" });
     await pg.getByRole("button", { name: "Plan a trip" }).click();
     await pg.getByLabel("Trip name").fill("Kyoto trip");
-    await pg.getByRole("radio", { name: /Solo — international/ }).click();
+    await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
+    await pg.getByRole("radio", { name: /Winter trip/ }).click();
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: "Kyoto trip" }).first().waitFor({ timeout: 8000 });
     // pack one item so the duplicate can prove states reset
@@ -409,7 +415,8 @@ async function a11y(page, label) {
     // guest makes a trip
     await pg.getByRole("button", { name: "Plan a trip" }).click();
     await pg.getByLabel("Trip name").fill("Secret getaway");
-    await pg.getByRole("radio", { name: /Solo — domestic/ }).click();
+    await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
+    await pg.getByRole("radio", { name: /Weekend getaway/ }).click();
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: "Secret getaway" }).first().waitFor({ timeout: 8000 });
     // mark one item private in the guest store (the guest UI has no private toggle yet; migration must still preserve the flag)
@@ -471,8 +478,7 @@ async function a11y(page, label) {
     await pg.goto(base + "/", { waitUntil: "networkidle" });
     await pg.getByRole("button", { name: "Plan a trip" }).click();
     await pg.getByLabel("Trip name").fill("Oslo trip");
-    await pg.getByRole("radio", { name: /Solo — domestic/ }).click();
-    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.getByRole("button", { name: "Create trip" }).click();   // start blank — this test only checks desktop framing
     await pg.locator("#main h1", { hasText: "Oslo trip" }).first().waitFor({ timeout: 8000 });
     await pg.getByLabel("Main").getByRole("button", { name: "Home" }).click();
     await pg.getByText("Next up").waitFor({ timeout: 8000 });
@@ -603,23 +609,48 @@ async function a11y(page, label) {
     await O.close(); await N.close();
   });
 
-  // No profile is left with zero ready-made lists, and the New-trip flow offers no removed template option.
-  await test("New-trip: the pilgrimage/religious profile still offers real starter lists", async () => {
+  // A ready-made template reveals its lists to tick, and the built trip carries those lists with items.
+  // Also checks a "Start blank" default (no template) yields one empty Packing list — nothing stated.
+  await test("New-trip: a ready-made template offers real lists; blank yields one empty list", async () => {
     const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
     const pg = await ctx.newPage();
     await pg.goto(base + "/", { waitUntil: "networkidle" });
     await pg.getByRole("button", { name: "Plan a trip" }).click();
     await pg.getByLabel("Trip name").fill("Pilgrimage trip");
-    await pg.getByRole("radio", { name: /Pilgrimage/ }).click();
-    assert.ok(await pg.getByRole("checkbox").count() >= 2, "pilgrimage profile offers starter lists (not left empty)");
+    await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
+    await pg.getByRole("radio", { name: /Pilgrimage \/ group/ }).click();
+    assert.ok(await pg.getByRole("checkbox").count() >= 2, "the template reveals its lists to tick (not left empty)");
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: "Pilgrimage trip" }).first().waitFor({ timeout: 8000 });
-    const lists = await pg.evaluate(async () => {
+    const trip = await pg.evaluate(async () => {
       const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
       const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
-      return all.map((x) => x.trip).find((t) => t.name === "Pilgrimage trip").lists.map((l) => l.name);
+      const t = all.map((x) => x.trip).find((t) => t.name === "Pilgrimage trip");
+      return { lists: t.lists.map((l) => l.name), items: t.lists.reduce((n, l) => n + l.items.length, 0), profile: t.profile };
     });
-    assert.ok(lists.length >= 2, "trip gets real starter lists: " + JSON.stringify(lists));
+    assert.ok(trip.lists.length >= 2, "trip gets the template's lists: " + JSON.stringify(trip.lists));
+    assert.ok(trip.items >= 4, "lists carry their items: " + trip.items);
+    assert.equal(trip.profile, "pilgrimage", "trip records the chosen template id");
+    await ctx.close();
+  });
+
+  // buildTripFromForm('ready','summer') produces Summer's four lists, with items, via the UI flow.
+  await test("New-trip: ready-made Summer trip builds the expected lists", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await createTrip(pg, "Summer holiday", "Summer trip");
+    const trip = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      const t = all.map((x) => x.trip).find((t) => t.name === "Summer holiday");
+      const sun = t.lists.find((l) => l.name === "Sun & skin");
+      return { lists: t.lists.map((l) => l.name), profile: t.profile, sunHasSunscreen: !!(sun && sun.items.some((i) => i.name === "Sunscreen" && i.mnf)) };
+    });
+    // Summer's four lists, plus the universal "Before you leave" list every trip carries.
+    assert.deepEqual(trip.lists, ["Clothes", "Sun & skin", "Documents", "Essentials", "Before you leave"], "Summer's lists: " + JSON.stringify(trip.lists));
+    assert.equal(trip.profile, "summer", "trip records the summer template id");
+    assert.ok(trip.sunHasSunscreen, "Sunscreen is present and marked must-not-forget");
     await ctx.close();
   });
 
@@ -636,9 +667,9 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
-  // The signed-in New-trip screen is the v2 flow (replacing the v1 modal): three fields, profile →
-  // ready-made lists, and nothing created until Create. Also holds the a11y floor at 320px.
-  await test("signed-in New-trip (v2): nothing auto-created; profile adds ready-made lists", async () => {
+  // The signed-in New-trip screen is the v2 flow (replacing the v1 modal): fields, a ready-made template →
+  // its lists, and nothing created until Create. Also holds the a11y floor at 320px.
+  await test("signed-in New-trip (v2): nothing auto-created; a ready-made template adds its lists", async () => {
     const ctx = await browser.newContext({ viewport: { width: 320, height: 720 } });
     const pg = await ctx.newPage();
     await signup(pg, "Nia", "secret1");
@@ -651,7 +682,8 @@ async function a11y(page, label) {
     await pg.locator("#main h1", { hasText: "Plan a trip" }).first().waitFor({ timeout: 8000 });
     assert.equal(await countTrips(), 0, "opening the New-trip form creates nothing (no auto-create)");
     await pg.getByLabel("Trip name").fill("Beach week");
-    await pg.getByRole("radio", { name: /Family/ }).click();   // profile → its ready-made lists
+    await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
+    await pg.getByRole("radio", { name: /Beach \/ holiday/ }).click();   // template → its ready-made lists
     await a11y(pg, "New-trip (320px)");
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: "Beach week" }).first().waitFor({ timeout: 8000 });
