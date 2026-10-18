@@ -535,6 +535,25 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
+  // Brand: the real Baggo mark (SVG asset) and wordmark appear in the brand lockup, and the locked
+  // tagline "Ready, together." shows on the Welcome screen. Guards against regressing to the plain dot.
+  await test("brand: Baggo mark + wordmark render, tagline on Welcome", async () => {
+    const ctx = await browser.newContext({ serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    const markSrc = await pg.locator(".v2-brand img.baggo-mark").first().getAttribute("src");
+    assert.ok(markSrc && markSrc.indexOf("baggo-mark.svg") !== -1, `brand uses the real mark asset (got ${markSrc})`);
+    assert.equal(await pg.locator(".v2-brand b").first().innerText(), "Baggo", "wordmark reads Baggo");
+    // textContent, not innerText: the tagline is CSS-uppercased, but the DOM text stays "Ready, together."
+    assert.equal((await pg.locator(".v2-brand .tag").first().textContent()).trim(), "Ready, together.", "Welcome lockup shows the locked tagline");
+    // the SVG asset is actually served (and reachable for offline precache)
+    const res = await pg.request.get(base + "/baggo-mark.svg?v=1");
+    assert.equal(res.status(), 200, "baggo-mark.svg is served");
+    assert.ok((res.headers()["content-type"] || "").indexOf("svg") !== -1, "served as SVG");
+    await ctx.close();
+  });
+
   // Signed-in v2 Together + Member: member cards show "% packed", opening a member is read-only, private items stay hidden.
   await test("signed-in Together/Member: % packed, read-only lists, private items hidden", async () => {
     // Omar: an account in the family with a shared item (packed) and a private item.

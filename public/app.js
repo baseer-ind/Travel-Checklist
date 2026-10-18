@@ -337,10 +337,19 @@
 
   /* ================= auth screens ================= */
   // v2 helpers for signed-out / form screens (brand bar, legal footer, password field, label field).
+  function baggoMarkImg(size) {
+    var img = el("img", "baggo-mark"); img.src = "/baggo-mark.svg?v=1"; img.width = size; img.height = size;
+    img.alt = ""; img.setAttribute("aria-hidden", "true"); img.setAttribute("draggable", "false"); return img;
+  }
+  function brandEl(tagline) {
+    var brand = el("div", "v2-brand"); brand.appendChild(baggoMarkImg(26));
+    var txt = el("span", "v2-brandtext"); txt.appendChild(el("b", null, "Baggo"));
+    if (tagline) txt.appendChild(el("em", "tag", "Ready, together."));
+    brand.appendChild(txt); return brand;
+  }
   function v2Brandbar(wrap) {
     var top = el("div", "v2-top");
-    var brand = el("div", "v2-brand"); brand.appendChild(el("span", "dot")); brand.appendChild(document.createTextNode("Baggo"));
-    top.appendChild(brand); wrap.appendChild(top); return top;
+    top.appendChild(brandEl(false)); wrap.appendChild(top); return top;
   }
   function v2Footer(parent) {
     var f = el("div", "v2-footer");
@@ -366,7 +375,8 @@
     var narrow = el("div", "v2-narrow"); wrap.appendChild(narrow);
     var signup = cfg.signupEnabled && authMode === "signup";
     var head = el("div", "v2-authhead");
-    var mark = el("div", "mark"); var sv = gsvg(G.bag, 2); sv.setAttribute("width", 26); sv.setAttribute("height", 26); mark.appendChild(sv); head.appendChild(mark);
+    var mark = el("div", "mark bare"); mark.appendChild(baggoMarkImg(52)); head.appendChild(mark);
+    head.appendChild(el("p", "v2-tagline", "Ready, together."));
     head.appendChild(el("h1", "v2-h1", signup ? "Create your account" : "Welcome back"));
     head.appendChild(el("p", "v2-sub", "Pack together, across your phones and laptops."));
     narrow.appendChild(head);
@@ -1133,7 +1143,7 @@
   function appHeader(wrap, backTo) {
     var top = el("div", "v2-top");
     if (backTo) top.appendChild(btnIcon(G.back, "Back", backTo));
-    var brand = el("div", "v2-brand"); brand.appendChild(el("span", "dot")); brand.appendChild(document.createTextNode("Baggo")); top.appendChild(brand);
+    top.appendChild(brandEl(false));
     var sp = el("div"); sp.style.flex = "1"; top.appendChild(sp);
     var st = el("span", "status " + saveState, STATUS_TEXT[saveState]); st.id = "saveStatus"; st.setAttribute("role", "status"); st.style.cssText = "font-size:var(--fs-meta);color:var(--slate);font-family:var(--font-mono);margin-inline-end:4px;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"; top.appendChild(st);
     var menu = el("button", "v2-iconbtn"); menu.type = "button"; menu.setAttribute("aria-label", "Menu" + (unread ? " (" + unread + " new)" : "")); menu.appendChild(gsvg(G.menu));
@@ -1605,9 +1615,9 @@
     if (hasTabs) wrap.style.paddingBottom = "96px";
     return wrap;
   }
-  function gBrand(wrap, withSignIn) {
+  function gBrand(wrap, withSignIn, tagline) {
     var top = el("div", "v2-top");
-    var brand = el("div", "v2-brand"); brand.appendChild(el("span", "dot")); brand.appendChild(document.createTextNode("Baggo")); top.appendChild(brand);
+    top.appendChild(brandEl(!!tagline));
     if (withSignIn) top.appendChild(btn("v2-link", "Sign in", guestSignIn));
     wrap.appendChild(top); return top;
   }
@@ -1634,7 +1644,7 @@
     $("main").appendChild(gTabbar());
   }
   function renderGWelcome() {
-    var wrap = gShell(false); gBrand(wrap, true);
+    var wrap = gShell(false); gBrand(wrap, true, true);
     var hero = el("div", "v2-empty"); hero.style.paddingTop = "32px";
     var icon = el("span"); icon.style.cssText = "width:56px;height:56px;border-radius:16px;background:var(--together-bg);color:var(--together-fg);display:flex;align-items:center;justify-content:center"; var big = gsvg(G.bag, 2); big.setAttribute("width", 28); big.setAttribute("height", 28); icon.appendChild(big); hero.appendChild(icon);
     hero.appendChild(el("h1", "v2-h1", "Pack for your next trip, together."));
