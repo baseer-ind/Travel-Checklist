@@ -282,6 +282,8 @@ body.v2 .v2-seg button[aria-selected="true"] { background: #ffffff; color: var(-
 .v2-brandtext { display: inline-flex; flex-direction: column; justify-content: center; line-height: 1; }
 .v2-brand b { font-weight: 800; letter-spacing: -.03em; }
 .v2-brandtext .tag { margin-top: 3px; font-style: normal; font-weight: 600; font-size: var(--fs-sm); letter-spacing: .14em; text-transform: uppercase; color: var(--together); }
-/* Auth hero: the mark is its own rose tile, so drop the tinted box behind it */
-.v2-authhead .mark.bare { width: auto; height: auto; background: none; border-radius: 0; }
-.v2-tagline { margin: 0; font-weight: 600; font-size: var(--fs-sm); letter-spacing: .16em; text-transform: uppercase; color: var(--together); }
+/* Stacked lockup for the Welcome + sign-in heroes: mark over "Baggo" over the tagline */
+.v2-brand.lockup { flex-direction: column; align-items: center; text-align: center; gap: 10px; }
+.v2-brand.lockup .v2-brandtext { align-items: center; gap: 2px; }
+.v2-brand.lockup b { font-size: 34px; line-height: .95; }
+.v2-brand.lockup .tag { margin-top: 5px; letter-spacing: .16em; }

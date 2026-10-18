@@ -1,5 +1,5 @@
 <svg viewBox="0 0 128 128" role="img" aria-label="Baggo" xmlns="http://www.w3.org/2000/svg">
-  <!-- Baggo mark — Direction C "Bag, going". Geometry per design handoff README. -->
+  <!-- Baggo mark — Direction C "Bag, going" (clean, from Claude Design). Geometry per handoff. -->
   <rect x="2" y="2" width="124" height="124" rx="28" fill="#D83A4E"/>
   <g transform="rotate(-8 60 74)">
     <!-- motion lines -->
@@ -12,11 +12,6 @@
     <path d="M56 48v-6a6 6 0 0 1 6-6h12a6 6 0 0 1 6 6v6" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
     <!-- clasp line -->
     <path d="M40 70h56" stroke="#FFFFFF" stroke-width="5"/>
-    <!-- running legs (stride) -->
-    <g stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none">
-      <path d="M56 96 L50 110 L61 114"/>
-      <path d="M82 96 L90 108 L81 115"/>
-    </g>
   </g>
   <!-- route lifting out of the case + plane (not rotated) -->
   <g>
