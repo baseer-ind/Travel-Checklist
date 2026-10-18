@@ -347,6 +347,14 @@
     if (tagline) txt.appendChild(el("em", "tag", "Ready, together."));
     brand.appendChild(txt); return brand;
   }
+  // Stacked brand lockup (mark + "Baggo" + "Ready, together." tagline), centred, for the
+  // Welcome and sign-in heroes. The every-screen header uses brandEl (mark + wordmark, no tagline).
+  function brandLockup() {
+    var brand = el("div", "v2-brand lockup"); brand.appendChild(baggoMarkImg(56));
+    var txt = el("span", "v2-brandtext"); txt.appendChild(el("b", null, "Baggo"));
+    txt.appendChild(el("em", "tag", "Ready, together."));
+    brand.appendChild(txt); return brand;
+  }
   function v2Brandbar(wrap) {
     var top = el("div", "v2-top");
     top.appendChild(brandEl(false)); wrap.appendChild(top); return top;
@@ -375,8 +383,7 @@
     var narrow = el("div", "v2-narrow"); wrap.appendChild(narrow);
     var signup = cfg.signupEnabled && authMode === "signup";
     var head = el("div", "v2-authhead");
-    var mark = el("div", "mark bare"); mark.appendChild(baggoMarkImg(52)); head.appendChild(mark);
-    head.appendChild(el("p", "v2-tagline", "Ready, together."));
+    head.appendChild(brandLockup());
     head.appendChild(el("h1", "v2-h1", signup ? "Create your account" : "Welcome back"));
     head.appendChild(el("p", "v2-sub", "Pack together, across your phones and laptops."));
     narrow.appendChild(head);
@@ -1644,9 +1651,9 @@
     $("main").appendChild(gTabbar());
   }
   function renderGWelcome() {
-    var wrap = gShell(false); gBrand(wrap, true, true);
+    var wrap = gShell(false); gBrand(wrap, true);
     var hero = el("div", "v2-empty"); hero.style.paddingTop = "32px";
-    var icon = el("span"); icon.style.cssText = "width:56px;height:56px;border-radius:16px;background:var(--together-bg);color:var(--together-fg);display:flex;align-items:center;justify-content:center"; var big = gsvg(G.bag, 2); big.setAttribute("width", 28); big.setAttribute("height", 28); icon.appendChild(big); hero.appendChild(icon);
+    hero.appendChild(brandLockup());
     hero.appendChild(el("h1", "v2-h1", "Pack for your next trip, together."));
     hero.appendChild(el("p", "v2-sub", "Make a list for anything, see who's ready, and never forget the charger again. No account needed to start, and it all works offline."));
     var row = el("div"); row.style.cssText = "display:flex;flex-direction:column;gap:10px;width:100%;margin-top:8px";
