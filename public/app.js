@@ -344,15 +344,15 @@
   function brandEl(tagline) {
     var brand = el("div", "v2-brand"); brand.appendChild(baggoMarkImg(26));
     var txt = el("span", "v2-brandtext"); txt.appendChild(el("b", null, "Baggo"));
-    if (tagline) txt.appendChild(el("em", "tag", "Ready, together."));
+    if (tagline) txt.appendChild(el("em", "tag", "Forget Forgetting"));
     brand.appendChild(txt); return brand;
   }
-  // Stacked brand lockup (mark + "Baggo" + "Ready, together." tagline), centred, for the
+  // Stacked brand lockup (mark + "Baggo" + "Forget Forgetting" tagline), centred, for the
   // Welcome and sign-in heroes. The every-screen header uses brandEl (mark + wordmark, no tagline).
   function brandLockup() {
     var brand = el("div", "v2-brand lockup"); brand.appendChild(baggoMarkImg(56));
     var txt = el("span", "v2-brandtext"); txt.appendChild(el("b", null, "Baggo"));
-    txt.appendChild(el("em", "tag", "Ready, together."));
+    txt.appendChild(el("em", "tag", "Forget Forgetting"));
     brand.appendChild(txt); return brand;
   }
   function v2Brandbar(wrap) {
