@@ -1,0 +1,29 @@
+<svg viewBox="0 0 128 128" role="img" aria-label="Baggo" xmlns="http://www.w3.org/2000/svg">
+  <!-- Baggo mark — Direction C "Bag, going". Geometry per design handoff README. -->
+  <rect x="2" y="2" width="124" height="124" rx="28" fill="#D83A4E"/>
+  <g transform="rotate(-8 60 74)">
+    <!-- motion lines -->
+    <g stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity="0.85">
+      <path d="M20 58h12"/><path d="M16 73h10"/><path d="M20 88h12"/>
+    </g>
+    <!-- suitcase body -->
+    <rect x="40" y="48" width="56" height="48" rx="12" fill="none" stroke="#FFFFFF" stroke-width="6"/>
+    <!-- handle -->
+    <path d="M56 48v-6a6 6 0 0 1 6-6h12a6 6 0 0 1 6 6v6" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+    <!-- clasp line -->
+    <path d="M40 70h56" stroke="#FFFFFF" stroke-width="5"/>
+    <!-- running legs (stride) -->
+    <g stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M56 96 L50 110 L61 114"/>
+      <path d="M82 96 L90 108 L81 115"/>
+    </g>
+  </g>
+  <!-- route lifting out of the case + plane (not rotated) -->
+  <g>
+    <path d="M44 40 Q70 18 92 30" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-dasharray="1.5 9"/>
+    <circle cx="44" cy="40" r="4.5" fill="#171A1F"/>
+    <g transform="translate(88 20) scale(0.95)">
+      <path d="M2 10l15-4.5-2.6 5M2 10l5 1.6 2 3.2 1.6-3.4M2 10l6.8-.2" fill="none" stroke="#171A1F" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
