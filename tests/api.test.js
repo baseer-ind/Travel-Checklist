@@ -29,9 +29,18 @@ const sampleTrip = (name) => ({ next: 10, curTrip: 1, curList: 2, trips: [{ id: 
   console.log("API tests on " + base);
 
   await test("health", async () => { const r = await client()("GET", "/api/health"); assert.equal(r.status, 200); assert.deepEqual(r.body, { ok: true, storage: "file", adminConfigured: true, signupOpen: true }); });
-  const amina = client(), bilal = client(), admin = client(), stranger = client();
-  await test("signup needs the family code", async () => { assert.equal((await amina("POST", "/api/signup", { username: "Amina", password: "secret1" })).status, 403); });
-  await test("signup works with the code", async () => { const r = await amina("POST", "/api/signup", { username: "Amina", password: "secret1", code: "FAMILY" }); assert.equal(r.status, 201); assert.equal(r.body.user.username, "Amina"); });
+  const amina = client(), bilal = client(), admin = client(), stranger = client(), solo = client();
+  await test("signup with no code creates a solo account", async () => {
+    const r = await solo("POST", "/api/signup", { username: "Solo", password: "secret9" });
+    assert.equal(r.status, 201); assert.equal(r.body.user.username, "Solo");
+    const fam = await solo("GET", "/api/family"); assert.equal(fam.status, 200); assert.equal(fam.body.circle, null);
+  });
+  await test("signup with a valid code joins that circle", async () => {
+    const r = await amina("POST", "/api/signup", { username: "Amina", password: "secret1", code: "FAMILY" });
+    assert.equal(r.status, 201); assert.equal(r.body.user.username, "Amina");
+    const fam = await amina("GET", "/api/family"); assert.notEqual(fam.body.circle, null); assert.equal(fam.body.code, "family");
+  });
+  await test("signup with a wrong code is refused", async () => { assert.equal((await client()("POST", "/api/signup", { username: "Nocode", password: "secret9", code: "not-a-real-code" })).status, 400); });
   await test("duplicate name is rejected (case-insensitive)", async () => { assert.equal((await client()("POST", "/api/signup", { username: "amina", password: "secret1", code: "family" })).status, 409); });
   await test("bad names and short passwords rejected", async () => { assert.equal((await client()("POST", "/api/signup", { username: "a", password: "secret1", code: "family" })).status, 400); assert.equal((await client()("POST", "/api/signup", { username: "Okay", password: "123", code: "family" })).status, 400); });
   await test("me after signup", async () => { const r = await amina("GET", "/api/me"); assert.equal(r.body.user.username, "Amina"); });
@@ -61,6 +70,34 @@ const sampleTrip = (name) => ({ next: 10, curTrip: 1, curList: 2, trips: [{ id: 
   await test("sharing code: view only, private items hidden", async () => { const r = await amina("POST", "/api/share/1"); assert.equal(r.status, 200); const code = r.body.code; const v = await stranger("GET", "/api/shared/" + code); assert.equal(v.status, 200); assert.equal(v.body.ownerName, "Amina"); assert.ok(!JSON.stringify(v.body).includes("Secret scarf")); await amina("DELETE", "/api/share/1"); assert.equal((await stranger("GET", "/api/shared/" + code)).status, 404); });
   await test("admin reset signed Bilal out everywhere", async () => { assert.equal((await bilal("GET", "/api/data")).status, 401); assert.equal((await bilal("POST", "/api/login", { username: "Bilal", password: "fresh12" })).status, 200); await bilal("POST", "/api/password", { current: "fresh12", newPassword: "secret2" }); });
   await test("group checklist: create, join, pack together", async () => { const g = await amina("POST", "/api/groups", { name: "Packing crew" }); assert.equal(g.status, 201); const id = g.body.group.id, code = g.body.group.code; const j = await bilal("POST", "/api/groups/join", { code }); assert.equal(j.status, 200); assert.equal(j.body.members.length, 2); const op = await bilal("POST", "/api/groups/" + id + "/op", { op: "addItem", listId: g.body.lists[0].id, name: "Tent" }); assert.equal(op.status, 200); const item = op.body.lists[0].items[0]; const p = await amina("POST", "/api/groups/" + id + "/op", { op: "setState", itemId: item.id, state: "packed" }); assert.equal(p.body.lists[0].items[0].by, "Amina"); assert.equal((await stranger("GET", "/api/groups/" + id)).status, 401); const a = await admin("GET", "/api/admin/groups"); assert.equal(a.body.groups[0].members.length, 2); });
+  await test("family/create returns a code, joins the creator, and familyView shows it", async () => {
+    const c = client();
+    assert.equal((await c("POST", "/api/signup", { username: "Fam1", password: "secret9" })).status, 201);
+    const r = await c("POST", "/api/family/create", {});
+    assert.equal(r.status, 200);
+    assert.ok(typeof r.body.code === "string" && r.body.code.length === 6, "a 6-char code: " + r.body.code);
+    assert.notEqual(r.body.circle, null);
+    const fam = await c("GET", "/api/family");
+    assert.equal(fam.body.code, r.body.code, "familyView shows the same code");
+    assert.ok(fam.body.members.some((m) => m.username === "Fam1" && m.you), "the creator is a member");
+  });
+  await test("two family creates return two different codes", async () => {
+    const c1 = client(), c2 = client();
+    await c1("POST", "/api/signup", { username: "FamA", password: "secret9" });
+    await c2("POST", "/api/signup", { username: "FamB", password: "secret9" });
+    const a = (await c1("POST", "/api/family/create", {})).body.code;
+    const b = (await c2("POST", "/api/family/create", {})).body.code;
+    assert.ok(a && b && a !== b, "distinct codes: " + a + " / " + b);
+  });
+  await test("a second user joins a generated family code and sees the creator", async () => {
+    const c1 = client(), c2 = client();
+    await c1("POST", "/api/signup", { username: "Hostie", password: "secret9" });
+    const code = (await c1("POST", "/api/family/create", {})).body.code;
+    assert.equal((await c2("POST", "/api/signup", { username: "Guestie", password: "secret9" })).status, 201);
+    const j = await c2("POST", "/api/family/join", { code });
+    assert.equal(j.status, 200);
+    assert.deepEqual(j.body.members.map((m) => m.username).sort(), ["Guestie", "Hostie"]);
+  });
   await test("per-trip: create, index, get, revision conflict, delete", async () => {
     const trip = { id: "pt1", name: "Weekend", created: 1, lists: [{ id: "l1", name: "Bag", emoji: "🎒", items: [{ id: "i1", name: "Socks", state: "todo", qty: 3, note: "wool" }] }] };
     let r = await amina("PUT", "/api/trips/pt1", { baseRev: 0, trip }); assert.equal(r.status, 200); assert.equal(r.body.rev, 1);

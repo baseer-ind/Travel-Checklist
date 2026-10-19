@@ -219,3 +219,29 @@ The signed-in "Plan a trip" is now the v2 New-trip screen (a new `appView` value
 **Not changed: the v1 sign-in and shared-list screens.** `renderAuth` and `renderSharedGuest` set `body.className = "guest"` and are still the v1 (pink) screens. Flipping them to `"guest v2"` was considered and rejected: their CSS uses v1-only tokens (`--card`, `--peach`, `--lavender`, `--sky`) defined only under `body:not(.v2)`, so under `.v2` the sign-in card and its primary button lose their backgrounds (verified by screenshot). Those two screens need a proper v2 rebuild, not a class flip; they stay v1 until then.
 
 `npm test`: 36. `npm run test:browser`: 16.
+
+## 2026-10-18 — Public signup (family-code gate removed)
+
+Account creation no longer requires the global `FAMILY_CODE`. Signup is **open by default**, controlled by a new env `SIGNUP_OPEN` (`signupEnabled = SIGNUP_OPEN !== "false"`), reported by `/api/config`, `/api/health` (`signupOpen`) and `/api/me` — no longer derived from `FAMILY_CODE`.
+- `POST /api/signup` accepts `{ username, password, code? }`. **Blank code → a solo account** (`circle: null`). A **non-empty code must name an existing family** — the admin's `FAMILY_CODE` or one a user generated (checked via `store.get("circlename:" + circleOf(code))`); a wrong code returns **400** ("That family code isn't right — leave it blank to sign up without one") so it never silently drops them. All existing protections kept (uniqueness, password rules, `noteFail`/lockout, same-origin).
+- `FAMILY_CODE` remains valid as an **optional** join code (the admin's family), just not a signup gate.
+- Client: the Log in / Create account toggle always shows; the family-code field is **optional** ("Family code — optional (you can also join a family later)"); fine print is public-appropriate.
+
+## 2026-10-18 — New-trip: "Start blank" vs "Ready-made list" + trip templates
+
+The "Who's going?" **profiles** step is replaced, after name and dates, by a two-way **"Start your lists"** choice: **Start blank** (one empty "Packing" list) or **Use a ready-made list** (reveals a template picker; selecting one reveals its lists with tick-to-include — "nothing is added without you"). `tripFormFields` / `buildTripFromForm` generalised: `f.mode` (`blank`|`ready`), `f.template`, `f.pick`; the trip's `profile` field records the chosen template id.
+- `PROFILES` / `STARTERS` / `UNIVERSAL` removed; a final `TEMPLATES` set added (Summer, Winter, Beach/holiday, Business, Weekend, Family, Pilgrimage). No template states a visa/health/entry fact — the "Check:" link-out rule is upheld (no such items exist in the new data).
+- **Every built trip carries the universal "Before you leave" list.** `normalize()` already backfills this list on load (`migrated = true`), so building it in at creation keeps new trips **born-normalized**. This also fixed a real two-device bug: a blank/template trip lacking the leave list made a pulling device run the migration and **auto-save on pull**, which could clobber a concurrent edit (caught by the two-device-conflict browser test once blank became the default). Trips are now born with the list, so a pull never mutates-then-saves.
+
+## 2026-10-18 — Flush stale clients (SW cache bump)
+
+`public/sw.js` cache bumped `baggo-shell-v8` → `v9` so every installed client re-precaches the new build on next open (the update-toast flow swaps it in). Confirmed the shell fetch handler is **network-first** (since the #13 change), so a stale cached `app.js` — the likely cause of a "new-trip form only asks a name" report — can't recur for an online returning visitor.
+
+## 2026-10-18 — Users can generate & share their own family code
+
+Any user can create their own family with a generated, guaranteed-unique code.
+- `POST /api/family/create`: reserves a unique code by looping `store.setnx("circlename:" + circleOf(S.randomCode(6)))` (setnx fails if taken), moves the user out of any existing circle, joins the new one, and returns `{ ...familyView(fresh), code }`.
+- `familyView` now includes the circle's plaintext `code` (from `circlename:`), so a member can display and share it. **Privacy is unchanged** — member summaries still pass through the `visible()` filter; private items/lists/trips never appear. The code is the family's own shared invite code.
+- Client: the connect screen offers **Create a family** (`famCreate`) and **Join a family** (existing code input + `famConnect`); the connected view shows the code prominently (`fmtCode`) with **Copy code** (clipboard + "Code copied") and **Share** (`navigator.share`, else copy). Copy/Share use the **raw** code (what joins); only the on-screen display is hyphenated.
+
+`npm test`: 41. `npm run test:browser`: 21.
