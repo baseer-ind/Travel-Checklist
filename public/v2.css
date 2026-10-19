@@ -298,3 +298,13 @@ body.v2 .v2-seg button[aria-selected="true"] { background: #ffffff; color: var(-
 .v2-dots .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--line-strong); }
 .v2-dots .dot.on { background: var(--together); }
 .v2-dots .dot.done { background: var(--packed); }
+
+/* ---- Emergency-contacts wallet card (print only) ---- */
+#walletCard { display: none; }
+@media print {
+  body > *:not(#walletCard) { display: none !important; }
+  #walletCard { display: block !important; position: absolute; left: 0; top: 0; width: 85mm; padding: 10mm 8mm; font-family: var(--font); color: #000; }
+  #walletCard h3 { margin: 0 0 4px; font-size: 14pt; }
+  #walletCard .wc-owner { font-size: 10pt; color: #333; margin-bottom: 8px; }
+  #walletCard .wc-row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid #ccc; font-size: 11pt; }
+}
