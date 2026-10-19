@@ -154,6 +154,46 @@ const sampleTrip = (name) => ({ next: 10, curTrip: 1, curList: 2, trips: [{ id: 
     assert.ok(!JSON.stringify((await admin("GET", "/api/admin/users/carer/data")).body).includes("+15550100"), "admin cannot see emergency contacts");
   });
 
+  await test("saved templates round-trip through the data endpoint and never reach family or admin", async () => {
+    const owner = client();
+    assert.equal((await owner("POST", "/api/signup", { username: "Tmpler", password: "secret9", code: "family" })).status, 201);
+    const data = sampleTrip("Tmpler trip");
+    data.myTemplates = [{ id: "my-abc", label: "Ski kit", emoji: "⭐", lists: [["Slopes", "⛷️", "packing", [["🧤", "Gloves", 2, true], ["🥽", "Goggles", null, null]]]] }];
+    assert.equal((await owner("PUT", "/api/data", { data })).status, 200);
+    // the owner's own templates survive the sanitize round-trip, with structure intact
+    const own = await owner("GET", "/api/data");
+    assert.ok(own.body.data.myTemplates && own.body.data.myTemplates.length === 1, "owner keeps their templates");
+    const tpl = own.body.data.myTemplates[0];
+    assert.equal(tpl.label, "Ski kit"); assert.equal(tpl.lists[0][0], "Slopes"); assert.equal(tpl.lists[0][3][0][1], "Gloves"); assert.equal(tpl.lists[0][3][0][2], 2); assert.equal(tpl.lists[0][3][0][3], true);
+    // they are private: a family member and the admin never see them
+    assert.ok(!JSON.stringify((await bilal("GET", "/api/family/tmpler")).body).includes("Ski kit"), "family cannot see saved templates");
+    assert.ok(!JSON.stringify((await bilal("GET", "/api/family")).body).includes("Ski kit"), "family listing has no templates");
+    assert.ok(!JSON.stringify((await admin("GET", "/api/admin/users/tmpler/data")).body).includes("Ski kit"), "admin cannot see saved templates");
+  });
+
+  await test("vendored QR generator produces the verified scannable matrices", async () => {
+    // qr.js is a browser IIFE; run it under a minimal window/document shim and snapshot its output.
+    // The golden hashes were generated from output confirmed scannable by an external decoder (jsQR);
+    // locking them guards against regressions in encoding, masking or format-info placement.
+    const crypto = require("crypto");
+    const src = fs.readFileSync(path.join(__dirname, "..", "public", "vendor", "qr.js"), "utf8");
+    const win = {}; new Function("window", "document", src)(win, { createElement: () => ({ getContext: () => ({}), setAttribute() {} }) });
+    assert.ok(win.BaggoQR && typeof win.BaggoQR.matrix === "function", "BaggoQR.matrix is exposed");
+    const golden = {
+      "family": { v: 1, mask: 3, size: 21, sha: "dfc50af8425ad7d7" },
+      "https://baggo.app/?family=family": { v: 2, mask: 2, size: 25, sha: "d87035557549cb42" },
+      "https://baggo.example.com/?family=SUMMER2026": { v: 3, mask: 2, size: 29, sha: "8f280ee0adacb856" },
+    };
+    for (const text of Object.keys(golden)) {
+      const q = win.BaggoQR.matrix(text), g = golden[text];
+      assert.equal(q.version, g.v); assert.equal(q.mask, g.mask); assert.equal(q.size, g.size);
+      // finder patterns present at the three corners (basic structural sanity)
+      [[0, 0], [0, g.size - 7], [g.size - 7, 0]].forEach(([r0, c0]) => { assert.equal(q.modules[r0][c0], 1); assert.equal(q.modules[r0 + 1][c0 + 1], 0); assert.equal(q.modules[r0 + 3][c0 + 3], 1); });
+      const sha = crypto.createHash("sha256").update(q.modules.map((row) => row.join("")).join("")).digest("hex").slice(0, 16);
+      assert.equal(sha, g.sha, "QR matrix for " + JSON.stringify(text) + " matches the scannable golden");
+    }
+  });
+
   await test("data survives a server restart", async () => { await new Promise((r) => server.close(r)); await new Promise((r) => setTimeout(r, 150)); server = createServer(env); await new Promise((r) => server.listen(0, r)); base = "http://127.0.0.1:" + server.address().port; const c = client(); assert.equal((await c("POST", "/api/login", { username: "Amina", password: "secret9" })).status, 200); const d = await c("GET", "/api/data"); assert.equal(d.body.data.trips[0].name, "Trip to Tokyo"); });
 
   server.close();

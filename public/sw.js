@@ -4,10 +4,10 @@
 // Offline store for the precached shell. The fetch handler is network-first, so routine asset changes
 // reach returning visitors without touching this name. Bump it only when the SHELL list or the SW
 // logic itself changes, to re-precache and clean up old caches on activate.
-const CACHE = "baggo-shell-v9";
+const CACHE = "baggo-shell-v10";
 const SHELL = [
   "/", "/index.html", "/fonts.css?v=1", "/style.css?v=1", "/tokens.css?v=1", "/v2.css?v=1",
-  "/db.js?v=1", "/sync.js?v=1", "/app.js?v=1", "/baggo-mark.svg?v=1",
+  "/db.js?v=1", "/sync.js?v=1", "/vendor/qr.js?v=1", "/app.js?v=1", "/baggo-mark.svg?v=1",
   "/fonts/PlusJakartaSans-latin.woff2",
   "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png",
 ];

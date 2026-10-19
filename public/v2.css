@@ -300,11 +300,28 @@ body.v2 .v2-seg button[aria-selected="true"] { background: #ffffff; color: var(-
 .v2-dots .dot.done { background: var(--packed); }
 
 /* ---- Emergency-contacts wallet card (print only) ---- */
-#walletCard { display: none; }
+#walletCard, #printSheet { display: none; }
 @media print {
-  body > *:not(#walletCard) { display: none !important; }
-  #walletCard { display: block !important; position: absolute; left: 0; top: 0; width: 85mm; padding: 10mm 8mm; font-family: var(--font); color: #000; }
+  body > *:not(#walletCard):not(#printSheet) { display: none !important; }
+  #walletCard, #printSheet { display: block !important; position: absolute; left: 0; top: 0; font-family: var(--font); color: #000; }
+  #walletCard { width: 85mm; padding: 10mm 8mm; }
   #walletCard h3 { margin: 0 0 4px; font-size: 14pt; }
   #walletCard .wc-owner { font-size: 10pt; color: #333; margin-bottom: 8px; }
   #walletCard .wc-row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid #ccc; font-size: 11pt; }
+  #printSheet { padding: 12mm; }
+  #printSheet h2 { font-size: 16pt; margin: 0 0 8px; }
+  #printSheet h3 { font-size: 12pt; margin: 10px 0 4px; }
+  #printSheet ul { margin: 0; padding-left: 18px; }
+  #printSheet li { font-size: 11pt; padding: 1px 0; }
 }
+
+/* ---- Share & save bottom sheet + confetti ---- */
+.v2-sheet-scrim { position: fixed; inset: 0; z-index: 1000; background: rgba(23, 26, 31, .4); display: flex; align-items: flex-end; justify-content: center; }
+/* The Share & save sheet reuses the base .v2-sheet look; this modifier only adds the stacked layout
+   and the slide-up (the app menu keeps the plain .v2-sheet — unchanged). */
+.v2-sheet-share { display: flex; flex-direction: column; gap: 10px; animation: v2-sheet-up var(--dur) var(--ease); }
+.v2-sheet-grip { width: 40px; height: 4px; border-radius: 999px; background: var(--line-strong); align-self: center; margin: 2px 0 6px; flex: none; }
+.v2-sheet-qr-wrap { display: flex; justify-content: center; padding: 6px 0; }
+.v2-confetti { position: fixed; inset: 0; z-index: 1200; pointer-events: none; }
+@keyframes v2-sheet-up { from { transform: translateY(18px); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .v2-sheet-share { animation: none; } }
