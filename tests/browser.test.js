@@ -646,7 +646,7 @@ async function a11y(page, label) {
     // Nadia opens Together (v2) via the overflow menu.
     await n.getByRole("button", { name: /Menu/ }).click();
     await n.getByRole("button", { name: "Together" }).click();
-    await n.getByRole("heading", { name: "Together" }).waitFor({ timeout: 8000 });
+    await n.getByRole("heading", { name: "Together", exact: true }).waitFor({ timeout: 8000 });
 
     // two members, each card carries a "% packed" figure (progress, not a readiness score)
     assert.ok(await n.locator(".v2-member").count() >= 2, "both family members are listed");

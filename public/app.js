@@ -1030,6 +1030,37 @@
     var n = family.circle.members;
     wrap.appendChild(el("p", "v2-sub", n + (n === 1 ? " person is" : " people are") + " connected. Tap a name to see what they chose and packed."));
     if (family.unread) wrap.appendChild(el("p", "v2-meta", "🔔 " + family.unread + " new since you last looked"));
+    // Family trips: every shared (non-private) trip across members, front and centre — so the screen
+    // is worth something the moment you join, not just a list of names. Private trips are already
+    // filtered out server-side (summarize runs on the visible view), so nothing hidden leaks here.
+    var allTrips = [];
+    family.members.forEach(function (m) { (m.trips || []).forEach(function (t) { allTrips.push({ m: m, t: t }); }); });
+    allTrips.sort(function (a, b) { var ad = a.t.travelDate || "9999-99", bd = b.t.travelDate || "9999-99"; return ad < bd ? -1 : ad > bd ? 1 : 0; });
+    if (allTrips.length) {
+      wrap.appendChild(el("h2", "v2-h2", "Trips you're packing for together"));
+      var tl = el("div"); tl.style.cssText = "display:flex;flex-direction:column;gap:10px;margin-bottom:6px";
+      allTrips.forEach(function (x) {
+        var t = x.t, m = x.m;
+        var card = el("button", "v2-card"); card.type = "button"; card.style.cssText = "display:block;width:100%;text-align:left";
+        card.setAttribute("aria-label", t.name + " — " + (m.you ? "your trip" : m.username + "'s trip") + ", " + t.packed + " of " + t.need + " packed");
+        var head = el("div"); head.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:6px";
+        var av = el("div", "v2-avatar", initials(m.username)); av.style.background = avatarColor(m.username); av.style.flex = "none"; av.setAttribute("aria-hidden", "true");
+        head.appendChild(av);
+        var ht = el("b"); ht.style.cssText = "flex:1;min-width:0;overflow-wrap:anywhere"; ht.textContent = t.name; head.appendChild(ht);
+        card.appendChild(head);
+        card.appendChild(el("div", "v2-sub", (m.you ? "You" : m.username) + (t.travelDate ? " · " + dayWords(t.travelDate) : "") + " · " + t.packed + "/" + t.need + " packed"));
+        card.appendChild(v2Bar(t.packed, t.need));
+        card.addEventListener("click", function () { viewMember(m); });
+        tl.appendChild(card);
+      });
+      wrap.appendChild(tl);
+    } else {
+      var es = el("div", "v2-card"); es.style.cssText = "display:flex;flex-direction:column;gap:10px";
+      es.appendChild(el("p", "v2-sub", "No shared trips yet. Plan a trip and everyone here will see it — anything you mark private (🙈) stays yours alone."));
+      es.appendChild(btn("v2-btn full", "Plan a trip", function () { view = "app"; newTripV2(); }));
+      wrap.appendChild(es);
+    }
+    wrap.appendChild(el("h2", "v2-h2", "People"));
     var people = el("div"); people.style.cssText = "display:flex;flex-direction:column;gap:10px";
     family.members.forEach(function (m) {
       var ag = famAgg(m);
