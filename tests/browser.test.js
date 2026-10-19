@@ -654,6 +654,41 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
+  // Transport: choosing "Plane" appends the Air-travel add-on list + a Travel-day reminder list, sets
+  // transport + departAt, and the Trip screen's "Add to calendar" downloads an .ics with the time + a VALARM.
+  await test("New-trip transport: Plane adds Air-travel + Travel-day lists; .ics has the time + a VALARM", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block", acceptDownloads: true });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await pg.locator("#main h1", { hasText: "Plan a trip" }).first().waitFor({ timeout: 8000 });
+    await pg.getByLabel("Trip name").fill("Trip to Rome");
+    await pg.getByLabel("Departure date").fill("2030-07-01");
+    await pg.getByLabel("Departure time").fill("09:30");
+    await pg.getByRole("radio", { name: "Start blank" }).click();           // reveals the transport step
+    await pg.getByRole("radio", { name: "Plane" }).click();                  // Traveling by? → Plane
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.locator("#main h1", { hasText: "Trip to Rome" }).first().waitFor({ timeout: 8000 });
+    const trip = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      const t = all.map((x) => x.trip).find((t) => t.name === "Trip to Rome");
+      return { lists: t.lists.map((l) => l.name), transport: t.transport, departAt: t.departAt, travelName: t.lists.find((l) => l.name === "Travel day").items.map((i) => i.name) };
+    });
+    assert.ok(trip.lists.includes("Air travel") && trip.lists.includes("Travel day"), "adds Air-travel + Travel-day lists: " + JSON.stringify(trip.lists));
+    assert.equal(trip.transport, "plane", "trip records the transport mode");
+    assert.equal(trip.departAt, "2030-07-01T09:30", "departAt combines date + time");
+    assert.ok(trip.travelName.some((n) => /airport/i.test(n)), "Travel day carries the mode's reminders");
+    // the .ics download (offline): has the departAt time and a -PT3H VALARM
+    const [download] = await Promise.all([pg.waitForEvent("download"), pg.getByRole("button", { name: /Add to calendar/ }).click()]);
+    const icsPath = await download.path();
+    const ics = fs.readFileSync(icsPath, "utf8");
+    assert.ok(ics.includes("DTSTART:20300701T093000"), "ics DTSTART has the departAt time: " + ics);
+    assert.ok(ics.includes("BEGIN:VALARM") && ics.includes("TRIGGER:-PT3H"), "ics has a -PT3H VALARM");
+    assert.ok(ics.includes("SUMMARY:Leave for Trip to Rome"), "ics summary names the trip");
+    await ctx.close();
+  });
+
   // The signed-in Trip row is denser than the guest row (adds private-toggle + remove) — hold the a11y floor at 320px.
   await test("signed-in v2 Trip: dense item row holds a11y at 320px", async () => {
     const ctx = await browser.newContext({ viewport: { width: 320, height: 720 } });
