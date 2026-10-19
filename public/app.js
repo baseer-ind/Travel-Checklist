@@ -33,6 +33,7 @@
   var rev = 0, dirty = false, saving = false, saveTimer = null, retryMs = 0, saveState = "saved";
   var view = "app";           // app | account | admin | adminuser | mustchange
   var appView = "home";       // within view==="app" (signed-in v2): home | trip | new
+  var celebrated = {};        // trip id -> already showed the 100% confetti (fires once per crossing)
   var ntForm = null;          // signed-in New-trip form state
   var offlineBoot = false;    // true when the app was booted from local cache with no network
   var adminGroups = null, adminUsers = null, adminDetail = null, flash = null, lastKey = null, expiredMsg = null;
@@ -214,7 +215,13 @@
     });
   }
   function selectTrip(tid, lid) { S.curTrip = tid; var t = trip(); S.curList = lid || (t && t.lists[0] ? t.lists[0].id : null); view = "app"; appView = "trip"; msgClear(); touch(); render(); }
-  function setState(item, s) { item.state = item.state === s ? "todo" : s; var t = trip(); if (item.state === "todo" && t) t.packedAt = null; msgClear(); touch(); render(); }
+  function setState(item, s) {
+    var was = item.state; item.state = item.state === s ? "todo" : s;
+    var t = trip(); if (item.state === "todo" && t) t.packedAt = null;
+    if (item.state === "packed" && was !== "packed") buzz(10);
+    if (t) { var x = tripCounts(t), c = { packed: x.p, need: x.need }; if (c.packed < c.need) celebrated[t.id] = false; celebrateIfComplete(t, c); }
+    msgClear(); touch(); render();
+  }
   function toggleHidden(o) { if (o.hidden) delete o.hidden; else o.hidden = true; msgClear(); touch(); render(); }
   function removeItem(l, item) { l.items = l.items.filter(function (i) { return i.id !== item.id; }); msgClear(); touch(); render(); }
   function addItem() {
@@ -538,7 +545,7 @@
   }
   // Export all of the signed-in person's content as a JSON file (client-side; works offline).
   function exportData() {
-    var payload = { app: "Baggo", exportedAt: new Date().toISOString(), account: { username: user.username }, trips: (S && S.trips) || [], contacts: (S && S.contacts) || [] };
+    var payload = { app: "Baggo", exportedAt: new Date().toISOString(), account: { username: user.username }, trips: (S && S.trips) || [], contacts: (S && S.contacts) || [], myTemplates: (S && S.myTemplates) || [] };
     try {
       var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
@@ -620,6 +627,12 @@
       var meta = [c.relation, c.phone].filter(Boolean).join(" · ");
       if (meta) card.appendChild(el("div", "v2-sub", meta));
       var acts = el("div", "row");
+      if (c.phone) {
+        var tel = String(c.phone).replace(/[^\d+]/g, "");
+        var call = el("a", "v2-btn sec", "Call"); call.href = "tel:" + tel; call.setAttribute("aria-label", "Call " + (c.name || "contact")); acts.appendChild(call);
+        var msg = el("a", "v2-btn sec", "Message"); msg.href = "sms:" + tel; msg.setAttribute("aria-label", "Message " + (c.name || "contact")); acts.appendChild(msg);
+        acts.appendChild(btn("v2-btn sec", "Save to phone", function () { saveContactVcf(c); }));
+      }
       acts.appendChild(btn("v2-btn sec", "Edit", function () { cEdit = Object.assign({}, c); renderContacts(); }));
       acts.appendChild(btn("v2-btn sec v2-danger-btn", "Delete", function () { deleteContact(c.id); }));
       card.appendChild(acts); wrap.appendChild(card);
@@ -642,9 +655,166 @@
     if (list.length) {
       var tools = el("div"); tools.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin-top:4px";
       tools.appendChild(btn("v2-btn sec", "Share", shareContacts));
+      tools.appendChild(btn("v2-btn sec", "Save all to phone", saveAllVcf));
       tools.appendChild(btn("v2-btn sec", "Wallet card", printWalletCard));
       wrap.appendChild(tools);
     }
+  }
+  // ---- Share & save helpers (no network; no runtime deps) ----
+  function reducedMotion() { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } }
+  function buzz(ms) { if (reducedMotion()) return; try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+  // QR via the vendored static generator (public/vendor/qr.js). Returns a canvas; falls back to text.
+  function makeQR(text) {
+    if (window.BaggoQR) { try { return window.BaggoQR.canvas(text, 164); } catch (e) {} }
+    var d = el("div", "v2-sub", text); return d;
+  }
+  // Short canvas confetti burst. Disabled under reduced-motion. Removes itself when done.
+  function confetti() {
+    if (reducedMotion()) return;
+    var cv = el("canvas"); cv.className = "v2-confetti"; cv.setAttribute("aria-hidden", "true");
+    var w = cv.width = window.innerWidth, h = cv.height = window.innerHeight;
+    document.body.appendChild(cv); var ctx = cv.getContext("2d");
+    var cols = ["#D83A4E", "#0E7C66", "#B45309", "#6D28D9", "#1361D1", "#FFD9C9"];
+    var N = 90, P = [];
+    for (var i = 0; i < N; i++) P.push({ x: w / 2 + (Math.random() - 0.5) * 80, y: h / 3, vx: (Math.random() - 0.5) * 9, vy: -6 - Math.random() * 7, g: 0.22 + Math.random() * 0.1, s: 4 + Math.random() * 5, c: cols[i % cols.length], r: Math.random() * 6 });
+    var t0 = Date.now();
+    (function frame() {
+      var dt = Date.now() - t0; ctx.clearRect(0, 0, w, h);
+      P.forEach(function (p) { p.vy += p.g; p.x += p.vx; p.y += p.vy; p.r += 0.2; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.globalAlpha = Math.max(0, 1 - dt / 1600); ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6); ctx.restore(); });
+      if (dt < 1600 && cv.parentNode) requestAnimationFrame(frame); else if (cv.parentNode) cv.parentNode.removeChild(cv);
+    })();
+  }
+  // Fire confetti + a toast once a trip crosses into fully-packed (guarded so it fires only on the transition).
+  function celebrateIfComplete(t, c) {
+    if (!c || !c.need || c.packed < c.need) return;
+    if (celebrated[t.id]) return; celebrated[t.id] = true;
+    confetti(); toast("All packed! 🎉"); buzz(20);
+  }
+  function shareText(title, text) {
+    if (navigator.share) { navigator.share({ title: title, text: text }).catch(function () {}); return; }
+    try { navigator.clipboard.writeText(text); toast("Copied"); } catch (e) { toast("Press and hold the text to copy it."); }
+  }
+  function shareWhatsApp(text) { window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener"); }
+  // A plain-text packing list. Private (hidden) items/lists and the personal "Before you leave" list are left out.
+  function formatTripText(trip) {
+    var out = "🧳 " + (trip.name || "Trip") + " — packing list";
+    (trip.lists || []).forEach(function (l) {
+      if (l.hidden || l.kind === "leave") return;
+      var items = (l.items || []).filter(function (i) { return !i.hidden; });
+      if (!items.length) return;
+      out += "\n\n" + (l.emoji ? l.emoji + " " : "") + l.name;
+      items.forEach(function (i) { out += "\n" + (i.state === "packed" ? "✅" : "☐") + " " + i.name + (i.qty && i.qty > 1 ? " ×" + i.qty : ""); });
+    });
+    return out;
+  }
+  function copyTripList(trip) { try { navigator.clipboard.writeText(formatTripText(trip)); toast("Copied"); } catch (e) { toast("Press and hold the text to copy it."); } }
+  function shareProgress(trip, c) {
+    var pct = c && c.need ? Math.round(c.packed / c.need * 100) : 0;
+    shareText("Baggo", "I'm " + pct + "% packed for " + (trip.name || "my trip") + " with Baggo 🧳 " + location.origin);
+  }
+  function emailTrip(trip) {
+    var subj = "Packing list: " + (trip.name || "Trip");
+    window.location.href = "mailto:?subject=" + encodeURIComponent(subj) + "&body=" + encodeURIComponent(formatTripText(trip));
+  }
+  // Clone a trip's structure into a fresh trip (items reset to todo, new ids, "(copy)" name, new dates).
+  function cloneTrip(t) {
+    var copy = JSON.parse(JSON.stringify(t));
+    copy.id = nid(); copy.name = (t.name || "Trip") + " (copy)"; copy.created = Date.now(); copy.packedAt = null; copy.archived = false;
+    copy.start = null; copy.end = null; copy.travelDate = null; copy.departAt = null;
+    (copy.lists || []).forEach(function (l) { l.id = nid(); (l.items || []).forEach(function (i) { i.id = nid(); i.state = "todo"; }); });
+    return copy;
+  }
+  function copyThisTrip(t) {
+    var copy = cloneTrip(t); S.trips.push(copy);
+    if (user) { S.curTrip = copy.id; S.curList = copy.lists[0] ? copy.lists[0].id : null; view = "app"; appView = "trip"; closeAppMenu(); touch(); render(); }
+    else { S.curTrip = copy.id; gFix(); gcat = "all"; guestPersist(); gGo("trip"); }
+    toast("Copied “" + (t.name || "trip") + "”.");
+  }
+  // "Copy a trip" from a Home screen: one trip copies straight away; several open a chooser.
+  function copyTripFromHome() {
+    var active = (S.trips || []).filter(function (t) { return !t.archived; });
+    if (!active.length) return;
+    if (active.length === 1) return copyThisTrip(active[0]);
+    openModal({ title: "Copy a trip", text: "Choose a trip to duplicate — its items start unpacked and you set new dates.", input: false, select: active.map(function (t) { return [t.id, t.name]; }), ok: "Copy" }, function (_v, id) {
+      var t = active.filter(function (x) { return x.id === id; })[0]; if (t) copyThisTrip(t);
+    });
+  }
+  // Save a trip's list structure as the user's own reusable template (local-first; private).
+  function saveAsTemplate(t) {
+    if (!S.myTemplates) S.myTemplates = [];
+    var lists = (t.lists || []).filter(function (l) { return l.kind !== "leave"; }).map(function (l) {
+      return [l.name, l.emoji, l.kind || "packing", (l.items || []).filter(function (i) { return !i.hidden; }).map(function (i) { return [i.emoji, i.name, i.qty || null, i.mnf ? true : null]; })];
+    });
+    S.myTemplates.push({ id: "my-" + nid(), label: t.name || "My template", emoji: "⭐", lists: lists });
+    cPersist(); toast("Saved as your template.");
+  }
+  function tripDirections(t) {
+    openModal({ title: "Directions to…", text: "Type your station, airport or address.", inputType: "text", value: "", ok: "Open in Maps" }, function (v) {
+      v = String(v || "").trim(); if (!v) return;
+      window.open("https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(v), "_blank", "noopener");
+    });
+  }
+  // vCards for saving contacts to the phone's address book (data download; no network).
+  function vcard(c) {
+    return "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:" + (c.name || "Contact") + "\r\nTEL;TYPE=CELL:" + (c.phone || "") + (c.relation ? "\r\nNOTE:" + c.relation : "") + "\r\nEND:VCARD\r\n";
+  }
+  function downloadFile(name, text, type) {
+    try {
+      var blob = new Blob([text], { type: type || "text/plain" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a"); a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+    } catch (e) { toast("Couldn't save the file on this device."); }
+  }
+  function saveContactVcf(c) { downloadFile((c.name || "contact").replace(/[^\w.-]+/g, "_") + ".vcf", vcard(c), "text/vcard"); }
+  function saveAllVcf() { var list = contacts(); if (!list.length) return; downloadFile("emergency-contacts.vcf", list.map(vcard).join(""), "text/vcard"); }
+  // Print just a trip's list (and "Save as PDF" via the browser's print dialog).
+  function printTripList(trip) {
+    var old = document.getElementById("printSheet"); if (old && old.parentNode) old.parentNode.removeChild(old);
+    var sheet = el("div"); sheet.id = "printSheet";
+    sheet.appendChild(el("h2", null, "🧳 " + (trip.name || "Trip")));
+    (trip.lists || []).forEach(function (l) {
+      if (l.hidden) return;
+      sheet.appendChild(el("h3", null, (l.emoji ? l.emoji + " " : "") + l.name));
+      var ul = el("ul");
+      (l.items || []).filter(function (i) { return !i.hidden; }).forEach(function (i) { ul.appendChild(el("li", null, (i.state === "packed" ? "☑ " : "☐ ") + i.name + (i.qty && i.qty > 1 ? " ×" + i.qty : ""))); });
+      sheet.appendChild(ul);
+    });
+    document.body.appendChild(sheet); window.print();
+    setTimeout(function () { if (sheet.parentNode) sheet.parentNode.removeChild(sheet); }, 800);
+  }
+  // Bottom sheet: Share & save. opts = { trip } or { family: familyView }.
+  function openShareSheet(opts) {
+    opts = opts || {};
+    var scrim = el("div", "v2-sheet-scrim");
+    var sheet = el("div", "v2-sheet v2-sheet-share"); sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-label", "Share and save");
+    function close() { if (scrim.parentNode) scrim.parentNode.removeChild(scrim); }
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) close(); });
+    sheet.appendChild(el("div", "v2-sheet-grip"));
+    sheet.appendChild(el("h2", "v2-h2", "Share & save"));
+    function row(label, fn) { var b = btn("v2-btn sec full", label, function () { close(); fn(); }); sheet.appendChild(b); return b; }
+    if (opts.trip) {
+      var t = opts.trip, c = user ? tripCounts(t) : gCounts(t); if (user) c = { packed: c.p, need: c.need };
+      row("Share list on WhatsApp", function () { shareWhatsApp(formatTripText(t)); });
+      row("Share list…", function () { shareText("Packing list: " + (t.name || "Trip"), formatTripText(t)); });
+      row("Copy list", function () { copyTripList(t); });
+      row("Share my progress", function () { shareProgress(t, c); });
+      if (t.departAt) row("Add to calendar", function () { addToCalendar(t); });
+      row("Email", function () { emailTrip(t); });
+      row("Print / Save as PDF", function () { printTripList(t); });
+      row("Copy this trip", function () { copyThisTrip(t); });
+      row("Save as my template", function () { saveAsTemplate(t); });
+    }
+    if (opts.family && opts.family.code) {
+      var code = opts.family.code;
+      sheet.appendChild(el("div", "v2-sheet-qr-wrap")).appendChild(makeQR(location.origin + "/?family=" + encodeURIComponent(code)));
+      sheet.appendChild(el("p", "v2-sub", "Scan to open Baggo and join with code " + fmtCode(code) + "."));
+      row("Copy family code", function () { famCopyCode(code); });
+      row("Share family code", function () { famShare(code); });
+    }
+    sheet.appendChild(btn("v2-btn full", "Close", close));
+    scrim.appendChild(sheet); document.body.appendChild(scrim);
   }
   function loadAdmin() {
     Promise.all([api("GET", "/api/admin/users"), api("GET", "/api/admin/feed"), api("GET", "/api/admin/overview"), api("GET", "/api/admin/groups")]).then(function (r) {
@@ -839,6 +1009,7 @@
       c.appendChild(el("h2", "v2-h2", "Join a family"));
       var f = el("label", "v2-field"); f.appendChild(el("span", null, "Family code"));
       var inp = el("input", "v2-input"); inp.setAttribute("aria-label", "Family code"); inp.placeholder = "family code"; inp.autocomplete = "off"; if (famErr) inp.setAttribute("aria-invalid", "true");
+      if (pendingFamily) { inp.value = pendingFamily; pendingFamily = null; }   // pre-fill from a scanned "?family=" link, once
       inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); famConnect(inp.value); } });
       f.appendChild(inp); c.appendChild(f);
       if (famErr) { var er = el("p", "v2-err", famErr); er.setAttribute("role", "alert"); c.appendChild(er); }
@@ -854,6 +1025,7 @@
       var crow = el("div", "row");
       crow.appendChild(btn("v2-btn sec", "Copy code", function () { famCopyCode(family.code); }));
       crow.appendChild(btn("v2-btn sec", "Share", function () { famShare(family.code); }));
+      crow.appendChild(btn("v2-btn sec", "Share & save", function () { openShareSheet({ family: family }); }));
       cc.appendChild(crow); wrap.appendChild(cc);
     }
     var n = family.circle.members;
@@ -1036,7 +1208,7 @@
   function renderSharedGuest() { renderShared(); }
 
   /* ================= group travel checklists ================= */
-  var pendingGroup = null, groups = null, curGroup = null, groupListId = null, toasted = {}, groupTick = 0;
+  var pendingGroup = null, pendingFamily = null, groups = null, curGroup = null, groupListId = null, toasted = {}, groupTick = 0;
   function groupLine(e) {
     var n = e.n, ic = { pack: "✅", skip: "🚫", add: "➕", remove: "➖", unpack: "↩️" }[e.k], verb = { pack: "packed", skip: "skipped", add: "added", remove: "removed", unpack: "un-packed" }[e.k];
     switch (e.k) {
@@ -1312,6 +1484,7 @@
       others.forEach(function (t) { wrap.appendChild(tripCardV2(t, tripCounts(t), false)); });
     }
     wrap.appendChild(btn("v2-btn sec full", "Plan another trip", newTripV2));
+    wrap.appendChild(btn("v2-btn sec full", "Copy a trip", copyTripFromHome));
   }
   // Soonest upcoming, then undated, then past; most recently created breaks ties (matches guest Home).
   function nextTripV2(active) {
@@ -1409,6 +1582,10 @@
     if (t.packedAt || t.hidden) wrap.appendChild(el("div", "v2-meta", [t.packedAt ? "✅ Packed " + fmtDate(t.packedAt) : "", t.hidden ? "🙈 private" : ""].filter(Boolean).join(" · ")));
     wrap.appendChild(v2Countdown(t, { onSet: setTravelDate, onClear: clearTravelDate, counts: tc }));
     var trCal = calRow(t); if (trCal) wrap.appendChild(trCal);
+    var trTools = el("div"); trTools.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin-top:2px";
+    trTools.appendChild(btn("v2-btn sec", "Share & save", function () { openShareSheet({ trip: t }); }));
+    if (t.transport) trTools.appendChild(btn("v2-btn sec", "Directions", function () { tripDirections(t); }));
+    wrap.appendChild(trTools);
     if (sharePanel && sharePanel.tripId === t.id) wrap.appendChild(buildShareV2(t));
     // Progress: packed of (packed + to-go), labelled "% packed" — progress, not a readiness score.
     var pct = tc.need ? Math.round(tc.p / tc.need * 100) : 0;
@@ -1577,9 +1754,14 @@
   /* ================= boot ================= */
   api("GET", "/api/me").then(function (r) {
     cfg.signupEnabled = !!r.signupEnabled; user = r.user;
-    var qc = null; try { var sp = new URLSearchParams(location.search); qc = sp.get("code"); pendingGroup = sp.get("group"); } catch (e) { }
+    var qc = null; try { var sp = new URLSearchParams(location.search); qc = sp.get("code"); pendingGroup = sp.get("group"); pendingFamily = sp.get("family"); } catch (e) { }
     var first = user ? afterLogin() : enterGuest();   // no account → guest-first (works offline)
-    return first.then(function () { if (qc) return openShared(qc); });
+    return first.then(function () {
+      if (qc) return openShared(qc);
+      // A scanned/followed "?family=CODE" link (from the QR or Share) jumps a signed-in user straight
+      // to Together with the code pre-filled. Guests have no account yet, so they stay on Home.
+      if (pendingFamily && user) { view = "family"; render(); loadFamily(); }
+    });
   }).catch(function (e) {
     // Offline or server down: if this device has a signed-in session and cached trips, boot anyway.
     return bootOffline(e);
@@ -1706,7 +1888,33 @@
 
   // Build a trip from a New-trip form (shared by guest and signed-in). Nothing is created until
   // the person taps Create — the chosen starter lists only, or one empty "Packing" list.
-  function templateById(id) { for (var i = 0; i < TEMPLATES.length; i++) if (TEMPLATES[i].id === id) return TEMPLATES[i]; return null; }
+  function myTemplates() { return (S && Array.isArray(S.myTemplates)) ? S.myTemplates : []; }
+  function templateById(id) {
+    for (var i = 0; i < TEMPLATES.length; i++) if (TEMPLATES[i].id === id) return TEMPLATES[i];
+    var my = myTemplates(); for (var j = 0; j < my.length; j++) if (my[j].id === id) return my[j];
+    return null;
+  }
+  function tplCard(tpl, f, rerender) {
+    var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.template === tpl.id ? "true" : "false");
+    var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
+    var ct = el("span", "ct"); ct.appendChild(el("b", null, tpl.emoji + "  " + tpl.label)); ct.appendChild(el("small", null, tpl.lists.length + " lists")); b.appendChild(ct);
+    b.addEventListener("click", function () { f.mode = "ready"; f.template = tpl.id; f.pick = {}; rerender(); });
+    return b;
+  }
+  // Render the ready-made template cards + the user's own saved templates into a wrap.
+  function templatePicker(wrap, f, rerender, label) {
+    var tp = el("div", "v2-field"); if (label) tp.appendChild(el("span", null, label));
+    var cards = el("div", "v2-choices"); cards.setAttribute("role", "radiogroup"); cards.setAttribute("aria-label", "Ready-made lists");
+    TEMPLATES.forEach(function (tpl) { cards.appendChild(tplCard(tpl, f, rerender)); });
+    tp.appendChild(cards); wrap.appendChild(tp);
+    var mine = myTemplates();
+    if (mine.length) {
+      var yt = el("div", "v2-field"); yt.appendChild(el("span", null, "Your templates"));
+      var yc = el("div", "v2-choices"); yc.setAttribute("role", "radiogroup"); yc.setAttribute("aria-label", "Your templates");
+      mine.forEach(function (tpl) { yc.appendChild(tplCard(tpl, f, rerender)); });
+      yt.appendChild(yc); wrap.appendChild(yt);
+    }
+  }
   function buildTripFromForm(f) {
     var lists = [];
     if (f.mode === "ready" && f.template) {
@@ -1768,16 +1976,7 @@
     start.appendChild(choices); wrap.appendChild(start);
     if (f.mode === "ready") {
       // Template picker: selectable cards (emoji + name + "N lists").
-      var tp = el("div", "v2-field"); tp.appendChild(el("span", null, "Choose a ready-made list"));
-      var cards = el("div", "v2-choices"); cards.setAttribute("role", "radiogroup"); cards.setAttribute("aria-label", "Ready-made lists");
-      TEMPLATES.forEach(function (tpl) {
-        var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.template === tpl.id ? "true" : "false");
-        var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
-        var ct = el("span", "ct"); ct.appendChild(el("b", null, tpl.emoji + "  " + tpl.label)); ct.appendChild(el("small", null, tpl.lists.length + " lists")); b.appendChild(ct);
-        b.addEventListener("click", function () { f.template = tpl.id; f.pick = {}; rerender(); });
-        cards.appendChild(b);
-      });
-      tp.appendChild(cards); wrap.appendChild(tp);
+      templatePicker(wrap, f, rerender, "Choose a ready-made list");
       var chosen = templateById(f.template);
       if (chosen) {
         // The chosen template's lists, tick-to-include (nothing is added without you).
@@ -1820,7 +2019,10 @@
   function gToggleItem(listId, id) {
     var t = gTrip(); if (!t) return; var l = t.lists.filter(function (x) { return x.id === listId; })[0]; if (!l) return;
     var it = l.items.filter(function (i) { return i.id === id; })[0]; if (!it) return;
+    var was = it.state;
     it.state = it.state === "packed" ? "todo" : "packed"; if (it.state !== "packed") t.packedAt = null;
+    if (it.state === "packed" && was !== "packed") buzz(10);
+    var c = gCounts(t); if (c.packed < c.need) celebrated[t.id] = false; celebrateIfComplete(t, { packed: c.packed, need: c.need });
     guestPersist(); renderGuest();
   }
   function gSkipItem(listId, id) {
@@ -1929,15 +2131,7 @@
     for (var i = 1; i <= TOTAL; i++) dots.appendChild(el("span", "dot" + (i === f._step ? " on" : i < f._step ? " done" : "")));
     wrap.appendChild(dots);
     if (f._step === 1) {
-      var cards = el("div", "v2-choices"); cards.setAttribute("role", "radiogroup"); cards.setAttribute("aria-label", "Kind of trip");
-      TEMPLATES.forEach(function (tpl) {
-        var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.template === tpl.id ? "true" : "false");
-        var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
-        var ct = el("span", "ct"); ct.appendChild(el("b", null, tpl.emoji + "  " + tpl.label)); ct.appendChild(el("small", null, tpl.lists.length + " lists")); b.appendChild(ct);
-        b.addEventListener("click", function () { f.mode = "ready"; f.template = tpl.id; f.pick = {}; renderGuest(); });
-        cards.appendChild(b);
-      });
-      wrap.appendChild(cards);
+      templatePicker(wrap, f, renderGuest, null);
     } else if (f._step === 2) {
       var who = el("div", "v2-choices"); who.setAttribute("role", "radiogroup"); who.setAttribute("aria-label", "Who's going");
       SURVEY_WHO.forEach(function (w) {
@@ -2044,6 +2238,7 @@
       });
     }
     wrap.appendChild(btn("v2-btn sec full", "Plan another trip", gNewForm));
+    wrap.appendChild(btn("v2-btn sec full", "Copy a trip", copyTripFromHome));
     $("main").appendChild(gTabbar());
   }
 
@@ -2093,6 +2288,10 @@
     var c = gCounts(t);
     wrap.appendChild(v2Countdown(t, { onSet: gSetDate, onClear: gClearDate, counts: { t: c.need - c.packed } }));
     var gCal = calRow(t); if (gCal) wrap.appendChild(gCal);
+    var gTools = el("div"); gTools.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin-top:2px";
+    gTools.appendChild(btn("v2-btn sec", "Share & save", function () { openShareSheet({ trip: t }); }));
+    if (t.transport) gTools.appendChild(btn("v2-btn sec", "Directions", function () { tripDirections(t); }));
+    wrap.appendChild(gTools);
     var prow = el("div"); prow.style.cssText = "display:flex;justify-content:space-between;align-items:baseline;gap:10px";
     prow.appendChild(el("span", "v2-sub", c.packed + " of " + c.need + " packed"));
     prow.appendChild(el("span", "v2-pct", c.pct + "% packed")); wrap.appendChild(prow);

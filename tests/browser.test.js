@@ -424,6 +424,53 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
+  await test("Share & save: WhatsApp text, copy this trip clones fresh, QR runs in page", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    // record window.open calls (WhatsApp share) without leaving the page
+    await ctx.addInitScript(() => { window.__opened = []; window.open = function (u) { window.__opened.push(u); return null; }; });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await surveyToName(pg, "Winter trip");
+    await pg.getByLabel("Trip name").fill("Lagos trip");
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.locator("#main h1", { hasText: "Lagos trip" }).first().waitFor({ timeout: 8000 });
+    // pack one item so the shared text shows ✅ and the copy can prove it reset to ☐
+    await pg.getByRole("checkbox").first().click();
+
+    // the vendored QR generator loaded and runs in the browser (scannability is locked by the API golden test)
+    const qr = await pg.evaluate(() => { const c = window.BaggoQR.canvas("https://x/?family=family", 164); return { ok: typeof window.BaggoQR.matrix === "function", w: c.width, h: c.height }; });
+    assert.ok(qr.ok && qr.w > 0 && qr.w === qr.h, "BaggoQR renders a square canvas");
+
+    // Share & save → WhatsApp: formatTripText output
+    await pg.getByRole("button", { name: "Share & save" }).click();
+    await pg.getByRole("button", { name: "Share list on WhatsApp" }).click();
+    const waText = await pg.evaluate(() => { const u = (window.__opened || []).find((x) => /wa\.me/.test(x)); return u ? decodeURIComponent(u.split("text=")[1]) : null; });
+    assert.ok(waText && waText.startsWith("🧳 Lagos trip — packing list"), "WhatsApp text has the heading");
+    assert.ok(waText.includes("✅ "), "a packed item shows ✅");
+    assert.ok(waText.includes("☐ "), "an unpacked item shows ☐");
+    assert.ok(!/Before you leave/.test(waText), "the private 'Before you leave' list is left out");
+
+    // Share & save → Copy this trip: a fresh clone, items reset, new ids
+    await pg.getByRole("button", { name: "Share & save" }).click();
+    await pg.getByRole("button", { name: "Copy this trip" }).click();
+    await pg.locator("#main h1", { hasText: "Lagos trip (copy)" }).first().waitFor({ timeout: 8000 });
+    const clone = await pg.evaluate(async () => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      const trips = all.map((x) => x.trip);
+      const orig = trips.find((t) => t.name === "Lagos trip"), copy = trips.find((t) => t.name === "Lagos trip (copy)");
+      const ids = (t) => ({ lists: t.lists.map((l) => l.id), items: t.lists.flatMap((l) => l.items.map((i) => i.id)) });
+      const o = ids(orig), c = ids(copy);
+      const overlap = o.items.filter((id) => c.items.includes(id)).length + o.lists.filter((id) => c.lists.includes(id)).length;
+      return { count: trips.length, packedInCopy: copy.lists.flatMap((l) => l.items).filter((i) => i.state === "packed").length, overlap, copyDate: copy.travelDate, copyPackedAt: copy.packedAt };
+    });
+    assert.equal(clone.count, 2, "two trips after copy");
+    assert.equal(clone.packedInCopy, 0, "copy resets every item to todo");
+    assert.equal(clone.overlap, 0, "copy has all-new list and item ids");
+    assert.ok(clone.copyDate == null && clone.copyPackedAt == null, "copy starts with no dates and not packed");
+    await ctx.close();
+  });
+
   // Together / migration: a guest's local trips move into the account on sign-in — nothing lost, private flag preserved.
   await test("guest -> account migration: trips move in, sync, private flag preserved", async () => {
     const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
