@@ -281,9 +281,20 @@ body.v2 .v2-seg button[aria-selected="true"] { background: #ffffff; color: var(-
 .v2-brand { gap: 9px; }
 .v2-brandtext { display: inline-flex; flex-direction: column; justify-content: center; line-height: 1; }
 .v2-brand b { font-weight: 800; letter-spacing: -.03em; }
-.v2-brandtext .tag { margin-top: 3px; font-style: normal; font-weight: 600; font-size: var(--fs-sm); letter-spacing: .14em; text-transform: uppercase; color: var(--together); }
+.v2-brandtext .tag { margin-top: 3px; font-style: normal; font-weight: 600; font-size: var(--fs-sm); letter-spacing: .01em; text-transform: none; color: var(--ink); }
 /* Stacked lockup for the Welcome + sign-in heroes: mark over "Baggo" over the tagline */
 .v2-brand.lockup { flex-direction: column; align-items: center; text-align: center; gap: 10px; }
 .v2-brand.lockup .v2-brandtext { align-items: center; gap: 2px; }
 .v2-brand.lockup b { font-size: 34px; line-height: .95; }
-.v2-brand.lockup .tag { margin-top: 5px; letter-spacing: .16em; }
+.v2-brand.lockup .tag { margin-top: 5px; font-size: 15px; }  /* ~45% of the 34px lockup wordmark */
+
+/* ---- Landing "why" strip + guided-survey progress dots ---- */
+.v2-why { display: flex; flex-direction: column; gap: 12px; width: 100%; margin-top: 20px; }
+.v2-why .item { display: flex; align-items: flex-start; gap: 12px; }
+.v2-why .item .e { font-size: 22px; line-height: 1.25; flex: none; }
+.v2-why .item .t b { display: block; font-size: var(--fs-lg); font-weight: 700; }
+.v2-why .item .t small { font-size: var(--fs-sm); color: var(--slate); }
+.v2-dots { display: flex; gap: 8px; justify-content: center; margin: 2px 0 8px; }
+.v2-dots .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--line-strong); }
+.v2-dots .dot.on { background: var(--together); }
+.v2-dots .dot.done { background: var(--packed); }

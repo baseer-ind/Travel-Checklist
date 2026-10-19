@@ -1641,7 +1641,9 @@
     var start = f.noDates ? null : (f.start || null);
     // Departure date + optional time → an ISO datetime (local wall-clock) for "Add to calendar".
     var departAt = (start && f.departTime) ? (start + "T" + f.departTime) : null;
-    return { id: nid(), name: f.name.trim(), created: Date.now(), packedAt: null, start: start, end: f.noDates ? null : (f.end || null), travelDate: start, profile: (f.mode === "ready" ? f.template : null) || null, transport: f.transport || null, departAt: departAt, lists: lists };
+    var trip = { id: nid(), name: f.name.trim(), created: Date.now(), packedAt: null, start: start, end: f.noDates ? null : (f.end || null), travelDate: start, profile: (f.mode === "ready" ? f.template : null) || null, transport: f.transport || null, departAt: departAt, lists: lists };
+    if (f.travellers) trip.travellers = f.travellers;   // optional "who's going" count from the guided survey
+    return trip;
   }
   // The three New-trip fields (name, dates, who's going → starter lists) rendered into a wrap.
   // `rerender` redraws the screen after a toggle; the caller adds its own header and Create button.
@@ -1759,7 +1761,7 @@
     a.sort(function (x, y) { var dx = gDaysUntil(x), dy = gDaysUntil(y); var rx = dx == null ? 1e8 : dx < 0 ? 1e7 - dx : dx; var ry = dy == null ? 1e8 : dy < 0 ? 1e7 - dy : dy; return rx - ry || (y.created || 0) - (x.created || 0); });
     return a[0];
   }
-  function gNewForm() { gform = { name: "", start: "", end: "", noDates: false, mode: null, template: null, transport: null, departTime: "", pick: {}, err: "" }; gGo("new"); }
+  function gNewForm() { gform = newForm(); gGo("new"); }
   function gShell(hasTabs) {
     document.body.className = "v2";
     var side = $("side"), scrim = $("scrim"); if (side) side.style.display = "none"; if (scrim) scrim.style.display = "none";   // hide v1 chrome in guest mode
@@ -1796,23 +1798,106 @@
     wrap.appendChild(em);
     $("main").appendChild(gTabbar());
   }
+  function newForm(extra) { return Object.assign({ name: "", start: "", end: "", noDates: false, mode: null, template: null, transport: null, departTime: "", travellers: null, pick: {}, err: "" }, extra || {}); }
+  function loadSurveyPrefs() { try { return JSON.parse(localStorage.getItem("baggo.survey") || "{}") || {}; } catch (e) { return {}; } }
+  function saveSurveyPrefs(f) { try { localStorage.setItem("baggo.survey", JSON.stringify({ template: f.template, transport: f.transport, travellers: f.travellers })); } catch (e) {} }
+  var SURVEY_WHO = [["solo", "Just me", 1], ["couple", "With a partner", 2], ["family", "Family", 4], ["group", "A group", 8]];
+  // "Start packing" from the landing → the guided survey, pre-filled from last time's answers.
+  function startSurvey() {
+    var p = loadSurveyPrefs();
+    gform = newForm({ _survey: true, _step: 1, mode: p.template ? "ready" : null, template: p.template || null, transport: p.transport || null, travellers: p.travellers || null });
+    gGo("new");
+  }
+  // Landing: brand lockup + one plain line + two actions + a 3-item "why" strip. This in-app screen IS the landing.
   function renderGWelcome() {
     var wrap = gShell(false); gBrand(wrap, true);
-    var hero = el("div", "v2-empty"); hero.style.paddingTop = "32px";
+    var hero = el("div", "v2-empty"); hero.style.paddingTop = "26px";
     hero.appendChild(brandLockup());
-    hero.appendChild(el("h1", "v2-h1", "Pack for your next trip, together."));
-    hero.appendChild(el("p", "v2-sub", "Make a list for anything, see who's ready, and never forget the charger again. No account needed to start, and it all works offline."));
-    var row = el("div"); row.style.cssText = "display:flex;flex-direction:column;gap:10px;width:100%;margin-top:8px";
-    row.appendChild(btn("v2-btn full", "Plan a trip", function () { gform = { name: "", start: "", end: "", noDates: false, mode: null, template: null, transport: null, departTime: "", pick: {}, err: "" }; gGo("new"); }));
-    row.appendChild(btn("v2-btn sec full", "Try a sample trip", gSampleTrip));
-    hero.appendChild(row); wrap.appendChild(hero);
+    hero.appendChild(el("p", "v2-sub", "Your travel packing companion — never leave a thing behind."));
+    var row = el("div"); row.style.cssText = "display:flex;flex-direction:column;gap:10px;width:100%;margin-top:6px";
+    row.appendChild(btn("v2-btn full", "Start packing", startSurvey));
+    row.appendChild(btn("v2-btn sec full", "Create account", guestCreateAccount));
+    hero.appendChild(row);
+    var why = el("div", "v2-why");
+    [["🧳", "Ready-made lists", "Start from a template, tweak to taste"], ["👨‍👩‍👧", "Pack together", "See who's ready across your phones"], ["📴", "Works offline", "No account needed to start"]].forEach(function (w) {
+      var c = el("div", "item"); c.appendChild(el("span", "e", w[0]));
+      var t = el("div", "t"); t.appendChild(el("b", null, w[1])); t.appendChild(el("small", null, w[2])); c.appendChild(t);
+      why.appendChild(c);
+    });
+    hero.appendChild(why); wrap.appendChild(hero);
   }
-  function gSampleTrip() {
-    gform = { name: "Weekend in Lisbon", start: "", end: "", noDates: true, mode: "ready", template: "weekend", transport: null, departTime: "", pick: {}, err: "" };
-    gCreateTrip();
+  // The guided survey: the first trip as a short, skippable stepper (reuses buildTripFromForm via gCreateTrip).
+  function renderSurvey() {
+    var f = gform; var wrap = gShell(false);
+    var top = gBrand(wrap, false);
+    top.insertBefore(btnIcon(G.back, "Back", function () { if (f._step > 1) { f._step--; renderGuest(); } else { gform = null; gGo(S.trips.length ? "home" : "welcome"); } }), top.firstChild);
+    var TOTAL = 4, titles = ["", "What kind of trip?", "Who's going? (optional)", "Traveling by? (optional)", "Trip name & dates"];
+    wrap.appendChild(el("h1", "v2-h1", titles[f._step]));
+    var dots = el("div", "v2-dots"); dots.setAttribute("role", "img"); dots.setAttribute("aria-label", "Step " + f._step + " of " + TOTAL);
+    for (var i = 1; i <= TOTAL; i++) dots.appendChild(el("span", "dot" + (i === f._step ? " on" : i < f._step ? " done" : "")));
+    wrap.appendChild(dots);
+    if (f._step === 1) {
+      var cards = el("div", "v2-choices"); cards.setAttribute("role", "radiogroup"); cards.setAttribute("aria-label", "Kind of trip");
+      TEMPLATES.forEach(function (tpl) {
+        var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.template === tpl.id ? "true" : "false");
+        var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
+        var ct = el("span", "ct"); ct.appendChild(el("b", null, tpl.emoji + "  " + tpl.label)); ct.appendChild(el("small", null, tpl.lists.length + " lists")); b.appendChild(ct);
+        b.addEventListener("click", function () { f.mode = "ready"; f.template = tpl.id; f.pick = {}; renderGuest(); });
+        cards.appendChild(b);
+      });
+      wrap.appendChild(cards);
+    } else if (f._step === 2) {
+      var who = el("div", "v2-choices"); who.setAttribute("role", "radiogroup"); who.setAttribute("aria-label", "Who's going");
+      SURVEY_WHO.forEach(function (w) {
+        var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.travellers === w[2] ? "true" : "false");
+        var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
+        var ct = el("span", "ct"); ct.appendChild(el("b", null, w[1])); b.appendChild(ct);
+        b.addEventListener("click", function () { f.travellers = (f.travellers === w[2] ? null : w[2]); renderGuest(); });
+        who.appendChild(b);
+      });
+      wrap.appendChild(who);
+    } else if (f._step === 3) {
+      var tr = el("div", "v2-choices"); tr.setAttribute("role", "radiogroup"); tr.setAttribute("aria-label", "Traveling by");
+      TRANSPORT.forEach(function (m) {
+        var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.transport === m.id ? "true" : "false");
+        var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
+        var ct = el("span", "ct"); ct.appendChild(el("b", null, m.emoji + "  " + m.label)); b.appendChild(ct);
+        b.addEventListener("click", function () { f.transport = (f.transport === m.id ? null : m.id); renderGuest(); });
+        tr.appendChild(b);
+      });
+      wrap.appendChild(tr);
+    } else {
+      var nameF = el("label", "v2-field"); nameF.appendChild(el("span", null, "Trip name"));
+      var nameI = el("input", "v2-input"); nameI.id = "ntName"; nameI.value = f.name; nameI.placeholder = "e.g. Weekend in Lisbon"; nameI.setAttribute("aria-label", "Trip name"); if (f.err) nameI.setAttribute("aria-invalid", "true");
+      nameI.addEventListener("input", function () { f.name = nameI.value; f.err = ""; });
+      nameF.appendChild(nameI); wrap.appendChild(nameF);
+      if (f.err) { var e = el("p", "v2-err", f.err); e.setAttribute("role", "alert"); wrap.appendChild(e); }
+      var datesF = el("div", "v2-field"); datesF.appendChild(el("span", null, "When?"));
+      var grid = el("div", "v2-dates");
+      var ds = el("input", "v2-input date"); ds.type = "date"; ds.value = f.start; ds.disabled = f.noDates; ds.setAttribute("aria-label", "Departure date"); ds.addEventListener("change", function () { f.start = ds.value; });
+      var de = el("input", "v2-input date"); de.type = "date"; de.value = f.end; de.disabled = f.noDates; de.setAttribute("aria-label", "Return date"); de.addEventListener("change", function () { f.end = de.value; });
+      grid.appendChild(ds); grid.appendChild(de); datesF.appendChild(grid);
+      var nd = el("label", "v2-checkline"); var ndi = document.createElement("input"); ndi.type = "checkbox"; ndi.checked = f.noDates; ndi.addEventListener("change", function () { f.noDates = ndi.checked; renderGuest(); }); nd.appendChild(ndi); nd.appendChild(document.createTextNode("I don't know my dates yet")); datesF.appendChild(nd);
+      wrap.appendChild(datesF);
+      var timeF = el("label", "v2-field"); timeF.appendChild(el("span", null, "Departure time (optional)"));
+      var ti = el("input", "v2-input date"); ti.type = "time"; ti.value = f.departTime || ""; ti.disabled = f.noDates; ti.setAttribute("aria-label", "Departure time"); ti.addEventListener("change", function () { f.departTime = ti.value; });
+      timeF.appendChild(ti); wrap.appendChild(timeF);
+    }
+    wrap.appendChild(btn("v2-btn full", f._step === TOTAL ? "Create trip" : "Next", function () {
+      if (f._step < TOTAL) { f._step++; renderGuest(); return; }
+      if (!f.name.trim()) { f.err = "Give your trip a name."; renderGuest(); return; }
+      saveSurveyPrefs(f); gCreateTrip();
+    }));
+    wrap.appendChild(btn("v2-btn sec full", "Skip, start blank", function () {
+      f.mode = "blank"; f.template = null; f.transport = null; f.travellers = null; f.pick = {};
+      if (!f.name.trim()) f.name = "My trip";
+      saveSurveyPrefs(f); gCreateTrip();
+    }));
   }
   function renderGNew() {
-    var f = gform; var wrap = gShell(false);
+    var f = gform;
+    if (f && f._survey) return renderSurvey();
+    var wrap = gShell(false);
     var top = gBrand(wrap, false); top.insertBefore(btnIcon(G.back, "Back", function () { gform = null; gGo(S.trips.length ? "home" : "welcome"); }), top.firstChild);
     wrap.appendChild(el("h1", "v2-h1", "Plan a trip"));
     tripFormFields(wrap, f, renderGNew);
