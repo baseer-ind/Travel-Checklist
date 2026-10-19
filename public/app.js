@@ -499,9 +499,10 @@
     });
   }
   function joinPending() {
-    if (!pendingGroup) return; var c = pendingGroup; pendingGroup = null;
+    if (!pendingGroup && !pendingFamily) return;
     try { history.replaceState(null, "", location.pathname); } catch (e) { }
-    api("POST", "/api/groups/join", { code: c }).then(showGroup).catch(function (e) { toast(errText(e)); });
+    if (pendingGroup) { var c = pendingGroup; pendingGroup = null; api("POST", "/api/groups/join", { code: c }).then(showGroup).catch(function (e) { toast(errText(e)); }); return; }
+    var fc = pendingFamily; pendingFamily = null; view = "family"; render(); famConnect(fc);   // a shared "?family=CODE" link joins the family after sign-in/sign-up
   }
   function logout() {
     var key = user ? user.key : null;
@@ -989,7 +990,7 @@
   // Copy/share use the RAW code (what joins); the screen shows it prettified with fmtCode.
   function famCopyCode(code) { try { navigator.clipboard.writeText(code); toast("Code copied"); } catch (e) { toast("Press and hold the code to copy it."); } }
   function famShare(code) {
-    if (navigator.share) { navigator.share({ title: "Baggo", text: "Join my family on Baggo — our code is " + code, url: location.origin }).catch(function () {}); }
+    if (navigator.share) { navigator.share({ title: "Baggo", text: "Join my family on Baggo — our code is " + code, url: location.origin + "/?family=" + encodeURIComponent(code) }).catch(function () {}); }
     else famCopyCode(code);
   }
   function renderFamily(main) {
@@ -1765,6 +1766,7 @@
       // A scanned/followed "?family=CODE" link (from the QR or Share) jumps a signed-in user straight
       // to Together with the code pre-filled. Guests have no account yet, so they stay on Home.
       if (pendingFamily && user) { view = "family"; render(); loadFamily(); }
+      else if (pendingFamily && !user) { toast("You're invited to a family — create a free account to join."); }
     });
   }).catch(function (e) {
     // Offline or server down: if this device has a signed-in session and cached trips, boot anyway.
