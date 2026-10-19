@@ -91,6 +91,17 @@ async function a11y(page, label) {
     await card.click();
     await pg.locator("#main h1", { hasText: name }).first().waitFor({ timeout: 8000 });
   }
+  // Drive the guided survey (landing "Start packing") to its last step (name & dates). Optionally pick a
+  // template on step 1; who's-going and transport are skipped with Next.
+  async function surveyToName(pg, template) {
+    await pg.getByRole("button", { name: "Start packing" }).click();
+    await pg.getByRole("heading", { name: "What kind of trip?" }).waitFor({ timeout: 8000 });
+    if (template) await pg.getByRole("radio", { name: new RegExp(template) }).click();
+    await pg.getByRole("button", { name: "Next" }).click();   // → who's going
+    await pg.getByRole("button", { name: "Next" }).click();   // → traveling by
+    await pg.getByRole("button", { name: "Next" }).click();   // → name & dates
+    await pg.getByRole("heading", { name: "Trip name & dates" }).waitFor({ timeout: 8000 });
+  }
 
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 375, height: 812 } });
@@ -251,7 +262,7 @@ async function a11y(page, label) {
 
     // first visit: install the SW and get it controlling the page; record the original canvas colour
     await p.goto(b3 + "/", { waitUntil: "networkidle" });
-    await p.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await p.getByRole("button", { name: "Start packing" }).waitFor({ timeout: 8000 });
     await p.reload({ waitUntil: "networkidle" });
     await p.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 8000 });
     assert.equal(await p.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(243, 235, 246)", "original canvas cached");
@@ -266,7 +277,7 @@ async function a11y(page, label) {
 
     // returning visit (online): the changed CSS is served without a manual cache bump
     await p.reload({ waitUntil: "networkidle" });
-    await p.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await p.getByRole("button", { name: "Start packing" }).waitFor({ timeout: 8000 });
     await p.waitForFunction(() => getComputedStyle(document.body).backgroundColor === "rgb(18, 52, 86)", null, { timeout: 8000 });
     const cacheAfter = await p.evaluate(async () => (await caches.keys()).filter((k) => k.indexOf("baggo-shell") === 0).sort());
     assert.deepEqual(cacheAfter, cacheBefore, "cache name did NOT change — freshness came from network-first, not a bump");
@@ -274,7 +285,7 @@ async function a11y(page, label) {
     // and it still works offline, served from the cache the network-first fetch refreshed
     await ctx.setOffline(true);
     await p.reload({ waitUntil: "domcontentloaded" });
-    await p.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await p.getByRole("button", { name: "Start packing" }).waitFor({ timeout: 8000 });
 
     await ctx.close();
     await new Promise((r) => srv.close(r));
@@ -293,26 +304,30 @@ async function a11y(page, label) {
     pg.on("request", (r) => { const u = r.url(); if (/\/api\/(data|trips|signup|login|groups|family)/.test(u)) sent.push(r.method() + " " + u.replace(/^https?:\/\/[^/]+/, "")); });
 
     await pg.goto(base + "/", { waitUntil: "networkidle" });
-    await pg.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await pg.getByRole("button", { name: "Start packing" }).waitFor({ timeout: 8000 });
 
     // go offline for the whole journey — guest mode must work with no network
     await ctx.setOffline(true);
 
     const tap = async (loc) => { taps++; await loc.click(); };
-    await tap(pg.getByRole("button", { name: "Plan a trip" }));            // 1
-    await pg.getByRole("heading", { name: "Plan a trip" }).waitFor({ timeout: 8000 });
+    // The guided survey: Start packing → kind of trip → (skip who/transport) → name → Create → tick.
+    await tap(pg.getByRole("button", { name: "Start packing" }));          // 1
+    await pg.getByRole("heading", { name: "What kind of trip?" }).waitFor({ timeout: 8000 });
+    await tap(pg.getByRole("radio", { name: /Summer trip/ }));             // 2 (pick a template)
+    await tap(pg.getByRole("button", { name: "Next" }));                   // 3 → who's going
+    await tap(pg.getByRole("button", { name: "Next" }));                   // 4 → traveling by
+    await tap(pg.getByRole("button", { name: "Next" }));                   // 5 → name & dates
     await pg.getByLabel("Trip name").fill("Weekend in Lisbon");            // typing (not a tap)
-    await tap(pg.getByRole("radio", { name: "Use a ready-made list" }));   // 2 (choose ready-made)
-    await tap(pg.getByRole("radio", { name: /Summer trip/ }));             // 3 (pick a template)
-    await tap(pg.getByRole("button", { name: "Create trip" }));           // 4
+    await tap(pg.getByRole("button", { name: "Create trip" }));           // 6
     await pg.waitForTimeout(300);
     await pg.locator("#main h1", { hasText: "Weekend in Lisbon" }).first().waitFor({ timeout: 8000 });
     // tick the first item
     const firstCheck = pg.getByRole("checkbox").first();
-    await tap(firstCheck);                                                 // 5
+    await tap(firstCheck);                                                 // 7
     await pg.waitForFunction(() => document.querySelectorAll('[role="checkbox"][aria-checked="true"]').length > 0, null, { timeout: 8000 });
 
-    assert.ok(taps <= 6, "took " + taps + " taps (<= 6)");
+    // The guided survey is a few more taps than the old one-page form; it stays fast and skippable.
+    assert.ok(taps <= 8, "took " + taps + " taps (<= 8)");
     assert.equal(sent.length, 0, "nothing was sent: " + JSON.stringify(sent));
 
     // it's on the device: a trip with lists and one packed item, stored under the guest owner
@@ -343,14 +358,18 @@ async function a11y(page, label) {
     const ctx = await browser.newContext({ viewport: { width: 320, height: 720 } });
     const pg = await ctx.newPage();
     await pg.goto(base + "/", { waitUntil: "networkidle" });
-    await pg.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await pg.getByRole("button", { name: "Start packing" }).waitFor({ timeout: 8000 });
     await a11y(pg, "Welcome");
-    await pg.getByRole("button", { name: "Plan a trip" }).click();
-    await pg.getByRole("heading", { name: "Plan a trip" }).waitFor({ timeout: 8000 });
-    await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
-    await pg.getByRole("radio", { name: /Family trip/ }).click();   // reveal the template's lists
-    await a11y(pg, "New trip");
+    await pg.getByRole("button", { name: "Start packing" }).click();
+    await pg.getByRole("heading", { name: "What kind of trip?" }).waitFor({ timeout: 8000 });
+    await pg.getByRole("radio", { name: /Family trip/ }).click();
+    await a11y(pg, "Survey step 1 (choices)");
+    await pg.getByRole("button", { name: "Next" }).click();
+    await pg.getByRole("button", { name: "Next" }).click();
+    await pg.getByRole("button", { name: "Next" }).click();
+    await pg.getByRole("heading", { name: "Trip name & dates" }).waitFor({ timeout: 8000 });
     await pg.getByLabel("Trip name").fill("Trip to Tokyo");
+    await a11y(pg, "Survey step 4 (name & dates)");
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.getByRole("heading", { name: "Trip to Tokyo" }).waitFor({ timeout: 8000 });
     await pg.waitForTimeout(100);
@@ -363,10 +382,8 @@ async function a11y(page, label) {
     const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
     const pg = await ctx.newPage();
     await pg.goto(base + "/", { waitUntil: "networkidle" });
-    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await surveyToName(pg, "Winter trip");
     await pg.getByLabel("Trip name").fill("Kyoto trip");
-    await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
-    await pg.getByRole("radio", { name: /Winter trip/ }).click();
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: "Kyoto trip" }).first().waitFor({ timeout: 8000 });
     // pack one item so the duplicate can prove states reset
@@ -413,10 +430,8 @@ async function a11y(page, label) {
     const pg = await ctx.newPage();
     await pg.goto(base + "/", { waitUntil: "networkidle" });
     // guest makes a trip
-    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await surveyToName(pg, "Weekend getaway");
     await pg.getByLabel("Trip name").fill("Secret getaway");
-    await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
-    await pg.getByRole("radio", { name: /Weekend getaway/ }).click();
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: "Secret getaway" }).first().waitFor({ timeout: 8000 });
     // mark one item private in the guest store (the guest UI has no private toggle yet; migration must still preserve the flag)
@@ -476,9 +491,9 @@ async function a11y(page, label) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: "block" });
     const pg = await ctx.newPage();
     await pg.goto(base + "/", { waitUntil: "networkidle" });
-    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    await surveyToName(pg, "Summer trip");
     await pg.getByLabel("Trip name").fill("Oslo trip");
-    await pg.getByRole("button", { name: "Create trip" }).click();   // start blank — this test only checks desktop framing
+    await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: "Oslo trip" }).first().waitFor({ timeout: 8000 });
     await pg.getByLabel("Main").getByRole("button", { name: "Home" }).click();
     await pg.getByText("Next up").waitFor({ timeout: 8000 });
@@ -516,7 +531,7 @@ async function a11y(page, label) {
     const ctx = await browser.newContext({ serviceWorkers: "block" });
     const pg = await ctx.newPage();
     await pg.goto(base + "/", { waitUntil: "networkidle" });
-    await pg.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await pg.getByRole("button", { name: "Start packing" }).waitFor({ timeout: 8000 });
     for (const width of [1280, 768]) {
       await pg.setViewportSize({ width, height: 800 });
       await pg.waitForTimeout(80);
@@ -547,11 +562,10 @@ async function a11y(page, label) {
     const ctx = await browser.newContext({ serviceWorkers: "block" });
     const pg = await ctx.newPage();
     await pg.goto(base + "/", { waitUntil: "networkidle" });
-    await pg.getByRole("heading", { name: "Pack for your next trip, together." }).waitFor({ timeout: 8000 });
+    await pg.getByRole("button", { name: "Start packing" }).waitFor({ timeout: 8000 });
     const markSrc = await pg.locator(".v2-brand img.baggo-mark").first().getAttribute("src");
     assert.ok(markSrc && markSrc.indexOf("baggo-mark.svg") !== -1, `brand uses the real mark asset (got ${markSrc})`);
     assert.equal(await pg.locator(".v2-brand b").first().innerText(), "Baggo", "wordmark reads Baggo");
-    // textContent, not innerText: the tagline is CSS-uppercased, but the DOM text stays "Forget Forgetting"
     assert.equal((await pg.locator(".v2-brand .tag").first().textContent()).trim(), "Forget Forgetting", "Welcome lockup shows the locked tagline");
     // the SVG asset is actually served (and reachable for offline precache)
     const res = await pg.request.get(base + "/baggo-mark.svg?v=1");
@@ -611,11 +625,13 @@ async function a11y(page, label) {
 
   // A ready-made template reveals its lists to tick, and the built trip carries those lists with items.
   // Also checks a "Start blank" default (no template) yields one empty Packing list — nothing stated.
-  await test("New-trip: a ready-made template offers real lists; blank yields one empty list", async () => {
-    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+  await test("New-trip: a ready-made template offers real lists (one-page form)", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
     const pg = await ctx.newPage();
-    await pg.goto(base + "/", { waitUntil: "networkidle" });
-    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    // The one-page form is the fast path (signed-in "Plan a trip" / guest "Plan another trip").
+    await signup(pg, "Pil", "secret1");
+    await pg.getByRole("button", { name: /^Plan a/ }).click();
+    await pg.locator("#main h1", { hasText: "Plan a trip" }).first().waitFor({ timeout: 8000 });
     await pg.getByLabel("Trip name").fill("Pilgrimage trip");
     await pg.getByRole("radio", { name: "Use a ready-made list" }).click();
     await pg.getByRole("radio", { name: /Pilgrimage \/ group/ }).click();
@@ -636,9 +652,9 @@ async function a11y(page, label) {
 
   // buildTripFromForm('ready','summer') produces Summer's four lists, with items, via the UI flow.
   await test("New-trip: ready-made Summer trip builds the expected lists", async () => {
-    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
     const pg = await ctx.newPage();
-    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await signup(pg, "Sol", "secret1");
     await createTrip(pg, "Summer holiday", "Summer trip");
     const trip = await pg.evaluate(async () => {
       const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
@@ -657,10 +673,11 @@ async function a11y(page, label) {
   // Transport: choosing "Plane" appends the Air-travel add-on list + a Travel-day reminder list, sets
   // transport + departAt, and the Trip screen's "Add to calendar" downloads an .ics with the time + a VALARM.
   await test("New-trip transport: Plane adds Air-travel + Travel-day lists; .ics has the time + a VALARM", async () => {
-    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block", acceptDownloads: true });
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, acceptDownloads: true });
     const pg = await ctx.newPage();
-    await pg.goto(base + "/", { waitUntil: "networkidle" });
-    await pg.getByRole("button", { name: "Plan a trip" }).click();
+    // one-page form (signed-in) — the transport step lives here as well as in the guided survey
+    await signup(pg, "Romer", "secret1");
+    await pg.getByRole("button", { name: /^Plan a/ }).click();
     await pg.locator("#main h1", { hasText: "Plan a trip" }).first().waitFor({ timeout: 8000 });
     await pg.getByLabel("Trip name").fill("Trip to Rome");
     await pg.getByLabel("Departure date").fill("2030-07-01");
@@ -687,6 +704,50 @@ async function a11y(page, label) {
     assert.ok(ics.includes("BEGIN:VALARM") && ics.includes("TRIGGER:-PT3H"), "ics has a -PT3H VALARM");
     assert.ok(ics.includes("SUMMARY:Leave for Trip to Rome"), "ics summary names the trip");
     await ctx.close();
+  });
+
+  // The guided survey reuses buildTripFromForm, so for equivalent answers it builds the same trip as the
+  // one-page form; and "Skip, start blank" yields a blank trip (one empty Packing list + Before you leave).
+  await test("guided survey == one-page form for equivalent answers; Skip yields a blank trip", async () => {
+    const getTrip = (pg, name) => pg.evaluate(async (n) => {
+      const req = indexedDB.open("baggo"); const db = await new Promise((r) => { req.onsuccess = () => r(req.result); });
+      const all = await new Promise((r) => { const q = db.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => r(q.result); });
+      return all.map((x) => x.trip).find((t) => t.name === n);
+    }, name);
+    const norm = (t) => ({ profile: t.profile || null, transport: t.transport || null, lists: t.lists.map((l) => ({ name: l.name, kind: l.kind || null, items: l.items.map((i) => i.name) })) });
+
+    // via the guided survey (guest): Summer template, no transport
+    const sc = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    const sp = await sc.newPage();
+    await sp.goto(base + "/", { waitUntil: "networkidle" });
+    await surveyToName(sp, "Summer trip");
+    await sp.getByLabel("Trip name").fill("Survey Trip");
+    await sp.getByRole("button", { name: "Create trip" }).click();
+    await sp.locator("#main h1", { hasText: "Survey Trip" }).first().waitFor({ timeout: 8000 });
+    const viaSurvey = norm(await getTrip(sp, "Survey Trip"));
+    await sc.close();
+
+    // via the one-page form (signed-in): same Summer template, no transport
+    const fc = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const fp = await fc.newPage();
+    await signup(fp, "Former", "secret1");
+    await createTrip(fp, "Form Trip", "Summer trip");
+    const viaForm = norm(await getTrip(fp, "Form Trip"));
+    await fc.close();
+    assert.deepEqual(viaSurvey, viaForm, "survey and one-page build the same trip structure");
+
+    // Skip, start blank → one empty Packing list + the universal Before-you-leave list, nothing else
+    const kc = await browser.newContext({ viewport: { width: 375, height: 812 }, serviceWorkers: "block" });
+    const kp = await kc.newPage();
+    await kp.goto(base + "/", { waitUntil: "networkidle" });
+    await kp.getByRole("button", { name: "Start packing" }).click();
+    await kp.getByRole("button", { name: "Skip, start blank" }).click();
+    await kp.locator("#main h1", { hasText: "My trip" }).first().waitFor({ timeout: 8000 });
+    const blank = await getTrip(kp, "My trip");
+    assert.deepEqual(blank.lists.map((l) => l.name), ["Packing", "Before you leave"], "blank = Packing + Before you leave: " + JSON.stringify(blank.lists.map((l) => l.name)));
+    assert.equal(blank.lists.find((l) => l.name === "Packing").items.length, 0, "the Packing list is empty");
+    assert.ok(!blank.profile && !blank.transport, "blank trip has no template or transport");
+    await kc.close();
   });
 
   // The signed-in Trip row is denser than the guest row (adds private-toggle + remove) — hold the a11y floor at 320px.

@@ -255,3 +255,15 @@ A trip can now record how you're travelling.
 - **Add to calendar** (Trip screen, when `departAt` is set, next to the countdown): `addToCalendar(trip)` builds a `.ics` (floating-local `VEVENT` "Leave for <trip>", `DTEND` +1h, a `VALARM` `TRIGGER:-PT3H`) and downloads it via a Blob URL — **no network, works offline** — plus a Google Calendar template-URL fallback link. Clearing a trip's date also clears `departAt`.
 
 `npm test`: 41. `npm run test:browser`: 22 (adds: Plane appends Air-travel + Travel-day lists, sets transport/departAt, and the .ics carries the time + a -PT3H VALARM).
+
+## 2026-10-19 — Landing screen + guided first-trip survey
+
+**Landing (renderGWelcome).** The no-account entry screen is now a proper landing: the Baggo mark + "Forget Forgetting" lockup, one plain line ("Your travel packing companion — never leave a thing behind"), two actions — **Start packing** (guest → the guided survey) and **Create account** — and a 3-item "why" strip (ready-made lists / pack together / works offline). This in-app screen *is* the landing; no separate site. Tokens unchanged.
+
+**Also folded in here (from the superseded #18):** the Design-5 tagline styling — `.tag` is now ink, title case, no uppercase, near-zero tracking, ~45% of the lockup wordmark — and the manifest/meta **description** → "Your travel packing companion — never leave a thing behind." (#20 had swapped only the tagline *text*; these were still missing.)
+
+**Guided survey = the first trip as a short, skippable stepper** (`renderSurvey`), invoked by "Start packing". Four steps, one question each, Back/Next, progress dots: (1) What kind of trip? → TEMPLATES, (2) Who's going? (optional) → sets `travellers`, (3) Traveling by? (optional) → TRANSPORT, (4) name + dates + departure time. It **reuses `buildTripFromForm`** (via `gCreateTrip`), so it produces the same trip as the one-page form for equivalent answers. Last answers (template/transport/travellers) persist to `localStorage` ("baggo.survey") and pre-fill next time. **"Skip, start blank"** on every step yields a blank trip ("My trip": one empty Packing list + Before you leave) — entry is never gated.
+
+**The one-page form stays** for the fast path: the guest Home's "Plan another trip" and the signed-in "Plan a trip" still use `tripFormFields`. The stepper is only the guest landing's first-trip flow.
+
+`npm test`: 41. `npm run test:browser`: 23 (adds: guided survey == one-page form for equivalent answers, and Skip yields a blank trip; guest tests re-pointed through the survey; one-page template/transport tests run on the signed-in form).
