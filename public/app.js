@@ -288,7 +288,7 @@
       if (!parseDay(v)) return; t.travelDate = v; touch(); render();
     });
   }
-  function clearTravelDate() { var t = trip(); if (!t) return; t.travelDate = null; touch(); render(); }
+  function clearTravelDate() { var t = trip(); if (!t) return; t.travelDate = null; t.departAt = null; touch(); render(); }
   // Design_1 live countdown for the v2 Trip (interactive: onSet/onClear) and Home card (opts.mini).
   // The 1-second tick stops itself once its grid leaves the DOM (screen change), so it never leaks.
   function v2Countdown(t, opts) {
@@ -1240,7 +1240,7 @@
   }
   // Signed-in New-trip: the v2 three-field flow (name, dates, who's going → ready-made lists),
   // replacing the v1 modal. Nothing is created until Create — no auto-create.
-  function newTripV2() { ntForm = { name: "", start: "", end: "", noDates: false, mode: null, template: null, pick: {}, err: "" }; appView = "new"; closeAppMenu(); render(); }
+  function newTripV2() { ntForm = { name: "", start: "", end: "", noDates: false, mode: null, template: null, transport: null, departTime: "", pick: {}, err: "" }; appView = "new"; closeAppMenu(); render(); }
   function renderNewTripV2() {
     var f = ntForm; var wrap = gShell(false);
     appHeader(wrap, function () { ntForm = null; appGo("home"); });
@@ -1254,6 +1254,53 @@
     var trip = buildTripFromForm(f);
     S.trips.push(trip); S.curTrip = trip.id; S.curList = trip.lists[0].id;
     ntForm = null; appView = "trip"; msgClear(); touch(); render();
+  }
+  // ---- Add to calendar (offline .ics download + a Google Calendar fallback link) ----
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  function icsEscape(s) { return String(s).replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n"); }
+  // departAt is "YYYY-MM-DDTHH:MM" local wall-clock → floating stamp "YYYYMMDDTHHMMSS" (+minutesToAdd).
+  function floatStamp(departAt, minutesToAdd) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(departAt || ""); if (!m) return null;
+    var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+    if (minutesToAdd) d.setMinutes(d.getMinutes() + minutesToAdd);
+    return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + "T" + pad2(d.getHours()) + pad2(d.getMinutes()) + "00";
+  }
+  function utcStamp(d) { return d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) + "T" + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + pad2(d.getUTCSeconds()) + "Z"; }
+  function buildICS(trip) {
+    var start = floatStamp(trip.departAt, 0); if (!start) return null;
+    var end = floatStamp(trip.departAt, 60);
+    var summary = icsEscape("Leave for " + (trip.name || "your trip"));
+    return [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Baggo//Trip//EN", "CALSCALE:GREGORIAN",
+      "BEGIN:VEVENT", "UID:baggo-" + trip.id + "@baggo", "DTSTAMP:" + utcStamp(new Date()),
+      "DTSTART:" + start, "DTEND:" + end, "SUMMARY:" + summary,
+      "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + summary, "TRIGGER:-PT3H", "END:VALARM",
+      "END:VEVENT", "END:VCALENDAR",
+    ].join("\r\n");
+  }
+  function gcalUrl(trip) {
+    var start = floatStamp(trip.departAt, 0); if (!start) return null;
+    var end = floatStamp(trip.departAt, 60);
+    return "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent("Leave for " + (trip.name || "your trip")) + "&dates=" + start + "/" + end;
+  }
+  function addToCalendar(trip) {
+    var ics = buildICS(trip); if (!ics) return;
+    try {
+      var blob = new Blob([ics], { type: "text/calendar" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a"); a.href = url; a.download = (trip.name ? trip.name.replace(/[^\w.-]+/g, "_") : "trip") + ".ics";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+      toast("Calendar file downloaded");
+    } catch (e) { toast("Couldn't create the calendar file."); }
+  }
+  function calRow(t) {
+    if (!t.departAt) return null;
+    var row = el("div"); row.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:2px";
+    row.appendChild(btn("v2-btn sec", "📅 Add to calendar", function () { addToCalendar(t); }));
+    var g = gcalUrl(t);
+    if (g) { var a = el("a", "v2-link", "Google Calendar"); a.href = g; a.target = "_blank"; a.rel = "noopener"; row.appendChild(a); }
+    return row;
   }
   function renderTripV2() {
     var t = trip(); var wrap = gShell(false);
@@ -1270,6 +1317,7 @@
     var tc = tripCounts(t);
     if (t.packedAt || t.hidden) wrap.appendChild(el("div", "v2-meta", [t.packedAt ? "✅ Packed " + fmtDate(t.packedAt) : "", t.hidden ? "🙈 private" : ""].filter(Boolean).join(" · ")));
     wrap.appendChild(v2Countdown(t, { onSet: setTravelDate, onClear: clearTravelDate, counts: tc }));
+    var trCal = calRow(t); if (trCal) wrap.appendChild(trCal);
     if (sharePanel && sharePanel.tripId === t.id) wrap.appendChild(buildShareV2(t));
     // Progress: packed of (packed + to-go), labelled "% packed" — progress, not a readiness score.
     var pct = tc.need ? Math.round(tc.p / tc.need * 100) : 0;
@@ -1510,6 +1558,26 @@
       ["Long journey","🚌","custom",[["🍿","Snacks for the journey"],["🎧","Headphones"],["🔌","Power bank",1,true],["💊","Travel-sickness tablets"]]],
       ["Documents","🛂","documents",[["🛂","Passport / ID",1,true],["🎟️","Group booking reference"],["💳","Cash & cards"]]] ]}
   ];
+  // Transport dimension. addon = one extra packing list for the mode; travel = travel-day reminder lines.
+  // (Logistics only — no visa/health/entry facts.)
+  var TRANSPORT = [
+    { id:"plane", emoji:"✈️", label:"Plane",
+      addon:["Air travel","✈️","transport",[["🛂","Passport / ID",1,true],["🎟️","Tickets / booking",1,true],["📱","Web check-in done"],["🧳","Baggage within airline limit"],["🔌","Charger & power bank"]]],
+      travel:["Reach the airport 2–3 hours before","Web check-in usually opens ~48h before","Keep ID & boarding pass handy"] },
+    { id:"train", emoji:"🚆", label:"Train",
+      addon:["Train travel","🚆","transport",[["🪪","ID card",1,true],["🎟️","Ticket / PNR",1,true],["💺","Coach & seat noted"],["🍿","Snacks & water"],["🔌","Power bank"]]],
+      travel:["Reach the station 30–45 min before","Check the platform number","Note your coach position"] },
+    { id:"road", emoji:"🚗", label:"By road / car",
+      addon:["Road trip","🚗","transport",[["🪪","Driving licence",1,true],["📄","Vehicle papers (RC, insurance, PUC)",1,true],["💳","FASTag balance"],["⛽","Full fuel tank"],["🛞","Tyre & spare check"],["🔌","Phone mount & charger"]]],
+      travel:["Fuel up the night before","Check tyres & spare","Plan your rest stops"] },
+    { id:"bus", emoji:"🚌", label:"Bus",
+      addon:["Bus travel","🚌","transport",[["🪪","ID card",1,true],["🎟️","Ticket",1,true],["📍","Boarding point noted"],["🍿","Snacks & water"],["🔌","Power bank"]]],
+      travel:["Reach the boarding point 15–20 min before","Note the boarding point"] },
+    { id:"ship", emoji:"🚢", label:"Ship / ferry",
+      addon:["Sea travel","🚢","transport",[["🛂","ID / passport",1,true],["🎟️","Ticket / boarding",1,true],["💊","Motion-sickness tablets"],["🧥","Light jacket"]]],
+      travel:["Reach the port early for check-in","Keep ID & ticket handy"] }
+  ];
+  function transportById(id) { for (var i = 0; i < TRANSPORT.length; i++) if (TRANSPORT[i].id === id) return TRANSPORT[i]; return null; }
   function gsvg(d, w) { var s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("width", 18); s.setAttribute("height", 18); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", w || 2); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true"); var pth = document.createElementNS("http://www.w3.org/2000/svg", "path"); pth.setAttribute("d", d); s.appendChild(pth); return s; }
   var G = { tick: "M5 12.5 10 17.5 19 7", skip: "M18 6 6 18", star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.6 1-5.8L3.5 9.7l5.9-.9z", back: "M15 6l-6 6 6 6", plus: "M12 5v14M5 12h14", home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z", bag: "M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z", people: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20a7 7 0 0 1 14 0M17 11a3 3 0 1 0-1-5.8M22 20a7 7 0 0 0-5-6.7",
     eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", eyeoff: "M3 3l18 18 M10.6 10.6a3 3 0 0 0 4.2 4.2 M9.8 5.1A9.6 9.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9 M6 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 3-.5",
@@ -1543,7 +1611,7 @@
       if (!parseDay(v)) return; t.start = v; t.travelDate = v; guestPersist(); renderGuest();
     });
   }
-  function gClearDate() { var t = gTrip(); if (!t) return; t.start = null; t.travelDate = null; guestPersist(); renderGuest(); }
+  function gClearDate() { var t = gTrip(); if (!t) return; t.start = null; t.travelDate = null; t.departAt = null; guestPersist(); renderGuest(); }
 
   // Build a trip from a New-trip form (shared by guest and signed-in). Nothing is created until
   // the person taps Create — the chosen starter lists only, or one empty "Packing" list.
@@ -1559,12 +1627,21 @@
     }
     // Start blank (or a ready-made trip with every list unticked) → one empty Packing list.
     if (!lists.length) lists = [{ id: nid(), name: "Packing", emoji: "🎒", kind: "packing", items: [] }];
+    // Transport: append the mode's add-on packing list and a "Travel day" reminder list.
+    var tp = f.transport ? transportById(f.transport) : null;
+    if (tp) {
+      var a = tp.addon;
+      lists.push({ id: nid(), name: a[0], emoji: a[1], kind: a[2], items: a[3].map(function (it) { var o = { id: nid(), emoji: it[0], name: it[1], state: "todo" }; if (it[2]) o.qty = it[2]; if (it[3]) o.mnf = true; return o; }) });
+      lists.push({ id: nid(), name: "Travel day", emoji: "⏰", kind: "transport", items: tp.travel.map(function (s) { return { id: nid(), emoji: "⏰", name: s, state: "todo" }; }) });
+    }
     // Every trip carries the universal "Before you leave" checklist (normalize() enforces this on load;
     // adding it at creation keeps new trips born-normalized, so a two-device pull never triggers a
     // migration-save that could clobber a concurrent edit).
     if (!lists.some(function (l) { return l.kind === "leave"; })) lists.push(mkLeaveList());
     var start = f.noDates ? null : (f.start || null);
-    return { id: nid(), name: f.name.trim(), created: Date.now(), packedAt: null, start: start, end: f.noDates ? null : (f.end || null), travelDate: start, profile: (f.mode === "ready" ? f.template : null) || null, lists: lists };
+    // Departure date + optional time → an ISO datetime (local wall-clock) for "Add to calendar".
+    var departAt = (start && f.departTime) ? (start + "T" + f.departTime) : null;
+    return { id: nid(), name: f.name.trim(), created: Date.now(), packedAt: null, start: start, end: f.noDates ? null : (f.end || null), travelDate: start, profile: (f.mode === "ready" ? f.template : null) || null, transport: f.transport || null, departAt: departAt, lists: lists };
   }
   // The three New-trip fields (name, dates, who's going → starter lists) rendered into a wrap.
   // `rerender` redraws the screen after a toggle; the caller adds its own header and Create button.
@@ -1581,6 +1658,10 @@
     grid.appendChild(ds); grid.appendChild(de); datesF.appendChild(grid);
     var nd = el("label", "v2-checkline"); var ndi = document.createElement("input"); ndi.type = "checkbox"; ndi.checked = f.noDates; ndi.addEventListener("change", function () { f.noDates = ndi.checked; rerender(); }); nd.appendChild(ndi); nd.appendChild(document.createTextNode("I don't know my dates yet")); datesF.appendChild(nd);
     wrap.appendChild(datesF);
+    // Optional departure time → combines with the date into departAt (used for "Add to calendar").
+    var timeF = el("label", "v2-field"); timeF.appendChild(el("span", null, "Departure time (optional)"));
+    var ti = el("input", "v2-input date"); ti.type = "time"; ti.value = f.departTime || ""; ti.disabled = f.noDates; ti.setAttribute("aria-label", "Departure time"); ti.addEventListener("change", function () { f.departTime = ti.value; });
+    timeF.appendChild(ti); wrap.appendChild(timeF);
     // Start your lists: a clear two-way choice — a blank list, or pick a ready-made template.
     var start = el("div", "v2-field"); start.appendChild(el("span", null, "Start your lists"));
     var choices = el("div", "v2-choices"); choices.setAttribute("role", "radiogroup"); choices.setAttribute("aria-label", "Start your lists");
@@ -1592,34 +1673,48 @@
       choices.appendChild(b);
     });
     start.appendChild(choices); wrap.appendChild(start);
-    if (f.mode !== "ready") return;
-    // Template picker: selectable cards (emoji + name + "N lists").
-    var tp = el("div", "v2-field"); tp.appendChild(el("span", null, "Choose a ready-made list"));
-    var cards = el("div", "v2-choices"); cards.setAttribute("role", "radiogroup"); cards.setAttribute("aria-label", "Ready-made lists");
-    TEMPLATES.forEach(function (tpl) {
-      var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.template === tpl.id ? "true" : "false");
+    if (f.mode === "ready") {
+      // Template picker: selectable cards (emoji + name + "N lists").
+      var tp = el("div", "v2-field"); tp.appendChild(el("span", null, "Choose a ready-made list"));
+      var cards = el("div", "v2-choices"); cards.setAttribute("role", "radiogroup"); cards.setAttribute("aria-label", "Ready-made lists");
+      TEMPLATES.forEach(function (tpl) {
+        var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.template === tpl.id ? "true" : "false");
+        var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
+        var ct = el("span", "ct"); ct.appendChild(el("b", null, tpl.emoji + "  " + tpl.label)); ct.appendChild(el("small", null, tpl.lists.length + " lists")); b.appendChild(ct);
+        b.addEventListener("click", function () { f.template = tpl.id; f.pick = {}; rerender(); });
+        cards.appendChild(b);
+      });
+      tp.appendChild(cards); wrap.appendChild(tp);
+      var chosen = templateById(f.template);
+      if (chosen) {
+        // The chosen template's lists, tick-to-include (nothing is added without you).
+        var sl = el("div", "v2-field");
+        sl.appendChild(el("span", null, "Lists in “" + chosen.label + "”"));
+        sl.appendChild(el("p", "v2-sub", "Tick what to add — nothing is added without you."));
+        var box = el("div"); box.style.cssText = "display:flex;flex-direction:column;gap:8px";
+        chosen.lists.forEach(function (t) {
+          var on = f.pick[t[0]] !== false;
+          var b = el("button", "v2-starter"); b.type = "button"; b.setAttribute("role", "checkbox"); b.setAttribute("aria-checked", on ? "true" : "false");
+          var bx = el("span", "box"); if (on) bx.appendChild(gsvg(G.tick, 3)); b.appendChild(bx);
+          var st = el("span", "st"); st.appendChild(el("b", null, t[1] + "  " + t[0])); st.appendChild(el("small", null, t[3].length + " items")); b.appendChild(st);
+          b.addEventListener("click", function () { f.pick[t[0]] = (f.pick[t[0]] === false); rerender(); });
+          box.appendChild(b);
+        });
+        sl.appendChild(box); wrap.appendChild(sl);
+      }
+    }
+    if (!f.mode) return;
+    // Traveling by? (optional) — adds the mode's packing add-on list + a travel-day reminder list.
+    var tr = el("div", "v2-field"); tr.appendChild(el("span", null, "Traveling by?"));
+    var trc = el("div", "v2-choices"); trc.setAttribute("role", "radiogroup"); trc.setAttribute("aria-label", "Traveling by");
+    TRANSPORT.forEach(function (m) {
+      var b = el("button", "v2-choice"); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", f.transport === m.id ? "true" : "false");
       var ring = el("span", "ring"); ring.appendChild(el("i")); b.appendChild(ring);
-      var ct = el("span", "ct"); ct.appendChild(el("b", null, tpl.emoji + "  " + tpl.label)); ct.appendChild(el("small", null, tpl.lists.length + " lists")); b.appendChild(ct);
-      b.addEventListener("click", function () { f.template = tpl.id; f.pick = {}; rerender(); });
-      cards.appendChild(b);
+      var ct = el("span", "ct"); ct.appendChild(el("b", null, m.emoji + "  " + m.label)); b.appendChild(ct);
+      b.addEventListener("click", function () { f.transport = (f.transport === m.id ? null : m.id); rerender(); });
+      trc.appendChild(b);
     });
-    tp.appendChild(cards); wrap.appendChild(tp);
-    var chosen = templateById(f.template);
-    if (!chosen) return;
-    // The chosen template's lists, tick-to-include (nothing is added without you).
-    var sl = el("div", "v2-field");
-    sl.appendChild(el("span", null, "Lists in “" + chosen.label + "”"));
-    sl.appendChild(el("p", "v2-sub", "Tick what to add — nothing is added without you."));
-    var box = el("div"); box.style.cssText = "display:flex;flex-direction:column;gap:8px";
-    chosen.lists.forEach(function (t) {
-      var on = f.pick[t[0]] !== false;
-      var b = el("button", "v2-starter"); b.type = "button"; b.setAttribute("role", "checkbox"); b.setAttribute("aria-checked", on ? "true" : "false");
-      var bx = el("span", "box"); if (on) bx.appendChild(gsvg(G.tick, 3)); b.appendChild(bx);
-      var st = el("span", "st"); st.appendChild(el("b", null, t[1] + "  " + t[0])); st.appendChild(el("small", null, t[3].length + " items")); b.appendChild(st);
-      b.addEventListener("click", function () { f.pick[t[0]] = (f.pick[t[0]] === false); rerender(); });
-      box.appendChild(b);
-    });
-    sl.appendChild(box); wrap.appendChild(sl);
+    tr.appendChild(trc); wrap.appendChild(tr);
   }
   function gCreateTrip() {
     var f = gform;
@@ -1664,7 +1759,7 @@
     a.sort(function (x, y) { var dx = gDaysUntil(x), dy = gDaysUntil(y); var rx = dx == null ? 1e8 : dx < 0 ? 1e7 - dx : dx; var ry = dy == null ? 1e8 : dy < 0 ? 1e7 - dy : dy; return rx - ry || (y.created || 0) - (x.created || 0); });
     return a[0];
   }
-  function gNewForm() { gform = { name: "", start: "", end: "", noDates: false, mode: null, template: null, pick: {}, err: "" }; gGo("new"); }
+  function gNewForm() { gform = { name: "", start: "", end: "", noDates: false, mode: null, template: null, transport: null, departTime: "", pick: {}, err: "" }; gGo("new"); }
   function gShell(hasTabs) {
     document.body.className = "v2";
     var side = $("side"), scrim = $("scrim"); if (side) side.style.display = "none"; if (scrim) scrim.style.display = "none";   // hide v1 chrome in guest mode
@@ -1708,12 +1803,12 @@
     hero.appendChild(el("h1", "v2-h1", "Pack for your next trip, together."));
     hero.appendChild(el("p", "v2-sub", "Make a list for anything, see who's ready, and never forget the charger again. No account needed to start, and it all works offline."));
     var row = el("div"); row.style.cssText = "display:flex;flex-direction:column;gap:10px;width:100%;margin-top:8px";
-    row.appendChild(btn("v2-btn full", "Plan a trip", function () { gform = { name: "", start: "", end: "", noDates: false, mode: null, template: null, pick: {}, err: "" }; gGo("new"); }));
+    row.appendChild(btn("v2-btn full", "Plan a trip", function () { gform = { name: "", start: "", end: "", noDates: false, mode: null, template: null, transport: null, departTime: "", pick: {}, err: "" }; gGo("new"); }));
     row.appendChild(btn("v2-btn sec full", "Try a sample trip", gSampleTrip));
     hero.appendChild(row); wrap.appendChild(hero);
   }
   function gSampleTrip() {
-    gform = { name: "Weekend in Lisbon", start: "", end: "", noDates: true, mode: "ready", template: "weekend", pick: {}, err: "" };
+    gform = { name: "Weekend in Lisbon", start: "", end: "", noDates: true, mode: "ready", template: "weekend", transport: null, departTime: "", pick: {}, err: "" };
     gCreateTrip();
   }
   function renderGNew() {
@@ -1820,6 +1915,7 @@
     wrap.appendChild(el("h1", "v2-h1", t.name));
     var c = gCounts(t);
     wrap.appendChild(v2Countdown(t, { onSet: gSetDate, onClear: gClearDate, counts: { t: c.need - c.packed } }));
+    var gCal = calRow(t); if (gCal) wrap.appendChild(gCal);
     var prow = el("div"); prow.style.cssText = "display:flex;justify-content:space-between;align-items:baseline;gap:10px";
     prow.appendChild(el("span", "v2-sub", c.packed + " of " + c.need + " packed"));
     prow.appendChild(el("span", "v2-pct", c.pct + "% packed")); wrap.appendChild(prow);

@@ -245,3 +245,13 @@ Any user can create their own family with a generated, guaranteed-unique code.
 - Client: the connect screen offers **Create a family** (`famCreate`) and **Join a family** (existing code input + `famConnect`); the connected view shows the code prominently (`fmtCode`) with **Copy code** (clipboard + "Code copied") and **Share** (`navigator.share`, else copy). Copy/Share use the **raw** code (what joins); only the on-screen display is hyphenated.
 
 `npm test`: 41. `npm run test:browser`: 21.
+
+## 2026-10-19 — Transport dimension on trips (+ Add to calendar)
+
+A trip can now record how you're travelling.
+- **`TRANSPORT` data** (public/app.js, near `TEMPLATES`): plane / train / road / bus / ship. Each mode has an `addon` (one extra packing list) and `travel` (travel-day reminder lines). The lines are **logistics only** — no visa/health/entry facts.
+- **New-trip form** (shared guest + signed-in): an optional **"Departure time"** input beside the dates (`f.departTime`), and a **"Traveling by?"** radio step after the start-lists section (shown for both blank and ready modes; `f.transport`, toggleable/optional).
+- **`buildTripFromForm`**: when a mode is chosen it appends the mode's add-on packing list and a **"Travel day"** list (`kind:"transport"`, items are the mode's `travel[]` lines, emoji ⏰), keeps the universal "Before you leave" list, and sets `trip.transport` and `trip.departAt` (the departure date + time combined into a local `YYYY-MM-DDTHH:MM`). `lib/shared.js` whitelists `transport`, `departAt`, and the new `transport` list kind so signed-in trips keep them.
+- **Add to calendar** (Trip screen, when `departAt` is set, next to the countdown): `addToCalendar(trip)` builds a `.ics` (floating-local `VEVENT` "Leave for <trip>", `DTEND` +1h, a `VALARM` `TRIGGER:-PT3H`) and downloads it via a Blob URL — **no network, works offline** — plus a Google Calendar template-URL fallback link. Clearing a trip's date also clears `departAt`.
+
+`npm test`: 41. `npm run test:browser`: 22 (adds: Plane appends Air-travel + Travel-day lists, sets transport/departAt, and the .ics carries the time + a -PT3H VALARM).
