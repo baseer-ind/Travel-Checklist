@@ -976,11 +976,9 @@
     return { p: p, n: n, pct: n ? Math.round(p / n * 100) : 0 };
   }
   function famConnect(code) {
-    code = String(code || "").trim();
-    if (!code) { famErr = "Enter your family's code."; return render(); }
-    api("POST", "/api/family/join", { code: code }).then(function (r) {
-      family = r; unread = 0; famErr = null; famReconnect = false; render();
-    }).catch(function (e) { famErr = errText(e); render(); });
+    var c = String(code || "").trim();
+    if (!c) { famErr = "Enter your family's code."; return render(); }
+    joinByCode(c, function (err) { if (err) { famErr = errText(err); render(); } });
   }
   function famCreate() {
     api("POST", "/api/family/create", {}).then(function (r) {
@@ -1257,10 +1255,21 @@
       api("POST", "/api/groups", { name: name }).then(showGroup).catch(function (e) { toast(errText(e)); });
     });
   }
+  // One join for both systems: try the code as a group first (groups validate and 404 on a bad
+  // code), then fall back to joining it as a family. So a family OR group code works in either box.
+  function joinByCode(code, cb) {
+    var c = String(code || "").trim();
+    if (!c) { if (cb) cb(new Error("empty")); return; }
+    api("POST", "/api/groups/join", { code: c }).then(function (r) { showGroup(r); if (cb) cb(null, "group"); }).catch(function () {
+      api("POST", "/api/family/join", { code: c }).then(function (r) {
+        family = r; unread = 0; famErr = null; famReconnect = false; view = "family"; render(); toast("You've joined the family! 👪"); if (cb) cb(null, "family");
+      }).catch(function (e) { if (cb) cb(e); });
+    });
+  }
   function joinGroup() {
     closeSide();
-    openModal({ title: "Join a group with a code 🔑", text: "Type the group code someone shared with you.", placeholder: "ABCD-2345", ok: "Join" }, function (code) {
-      api("POST", "/api/groups/join", { code: code }).then(showGroup).catch(function (e) { toast(errText(e)); });
+    openModal({ title: "Join with a code 🔑", text: "Type the family or group code someone shared with you.", placeholder: "e.g. 5EBEK3", ok: "Join" }, function (code) {
+      joinByCode(code, function (err) { if (err) toast(errText(err)); });
     });
   }
   function groupOp(body) {
@@ -1734,7 +1743,7 @@
     }
     sheet.appendChild(el("div", "v2-sheet-sep"));
     row("➕", "New group", newGroup);
-    row("🔑", "Join a group", joinGroup);
+    row("🔑", "Join with a code", joinGroup);
     row("🔗", "Open a shared list", askSharedCode);
     sheet.appendChild(el("div", "v2-sheet-sep"));
     row("⚙️", "My account", function () { go("account"); });
