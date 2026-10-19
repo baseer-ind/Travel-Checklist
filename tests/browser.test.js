@@ -836,6 +836,42 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
+  // Emergency contacts: reachable from Settings, add/share/delete, included in export; a11y holds.
+  await test("emergency contacts: add, share, delete; export includes them", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, acceptDownloads: true, permissions: ["clipboard-read", "clipboard-write"] });
+    const pg = await ctx.newPage();
+    await signup(pg, "Carey", "secret1");
+    await pg.getByRole("button", { name: /Menu/ }).click();
+    await pg.getByRole("button", { name: "My account" }).click();
+    await pg.getByRole("button", { name: "Manage emergency contacts" }).click();
+    await pg.getByRole("heading", { name: "Emergency contacts" }).waitFor({ timeout: 8000 });
+    await a11y(pg, "Emergency contacts (empty)");
+    // add a contact
+    await pg.getByRole("button", { name: "Add a contact" }).click();
+    await pg.getByLabel("Name").fill("Mum");
+    await pg.getByLabel("Phone").fill("+15550100");
+    await pg.getByLabel("Relation (optional)").fill("Mother");
+    await pg.getByRole("button", { name: "Save" }).click();
+    await pg.getByText("+15550100").first().waitFor({ timeout: 8000 });
+    await a11y(pg, "Emergency contacts (with one)");
+    // share + wallet card are offered; Share must not throw (falls back to clipboard offline)
+    assert.equal(await pg.getByRole("button", { name: "Share" }).count(), 1, "Share offered");
+    assert.equal(await pg.getByRole("button", { name: "Wallet card" }).count(), 1, "Wallet card offered");
+    await pg.getByRole("button", { name: "Share" }).click();
+    // export includes the contact
+    await pg.getByRole("button", { name: "Back" }).click();
+    await pg.getByRole("button", { name: /Menu/ }).click();
+    await pg.getByRole("button", { name: "My account" }).click();
+    const [dl] = await Promise.all([pg.waitForEvent("download"), pg.getByRole("button", { name: /Export all my data/ }).click()]);
+    const json = JSON.parse(fs.readFileSync(await dl.path(), "utf8"));
+    assert.ok(json.contacts && json.contacts.some((c) => c.phone === "+15550100" && c.name === "Mum"), "export includes emergency contacts: " + JSON.stringify(json.contacts));
+    // delete the contact
+    await pg.getByRole("button", { name: "Manage emergency contacts" }).click();
+    await pg.getByRole("button", { name: "Delete" }).first().click();
+    assert.equal(await pg.getByText("+15550100").count(), 0, "contact removed after delete");
+    await ctx.close();
+  });
+
   await browser.close();
   await new Promise((r) => server.close(r));
   console.log("\n" + passed + " passed, " + failed + " failed");

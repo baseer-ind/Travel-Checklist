@@ -123,13 +123,35 @@ const sampleTrip = (name) => ({ next: 10, curTrip: 1, curList: 2, trips: [{ id: 
   await test("self-service delete removes the account + data; admin can't self-delete", async () => {
     const c = client();
     assert.equal((await c("POST", "/api/signup", { username: "Deleteme", password: "secret5", code: "family" })).status, 201);
-    assert.equal((await c("PUT", "/api/data", { data: sampleTrip("Delete trip") })).status, 200);
+    const delData = sampleTrip("Delete trip"); delData.contacts = [{ id: "dc1", name: "ICE", phone: "+15559999", relation: "Partner" }];
+    assert.equal((await c("PUT", "/api/data", { data: delData })).status, 200);
+    assert.ok(JSON.stringify((await c("GET", "/api/data")).body).includes("+15559999"), "emergency contact saved before delete");
     assert.equal((await c("DELETE", "/api/account")).status, 200);
-    // account is gone: the cleared session can't read data, and the credentials no longer log in
+    // account + data (trips AND emergency contacts) are gone: the cleared session can't read data
     assert.equal((await c("GET", "/api/data")).status, 401);
     assert.equal((await client()("POST", "/api/login", { username: "deleteme", password: "secret5" })).status, 401);
     // the config-based admin account can't be self-deleted here
     assert.equal((await admin("DELETE", "/api/account")).status, 400);
+  });
+
+  await test("emergency contacts are private: never visible to a family member or admin", async () => {
+    const owner = client(), mate = client();
+    assert.equal((await owner("POST", "/api/signup", { username: "Carer", password: "secret9", code: "family" })).status, 201);
+    assert.equal((await mate("POST", "/api/signup", { username: "Matey", password: "secret9", code: "family" })).status, 201);
+    const data = sampleTrip("Carer trip");
+    data.contacts = [{ id: "ec1", name: "Mum", phone: "+15550100", relation: "Mother" }];
+    assert.equal((await owner("PUT", "/api/data", { data })).status, 200);
+    // the owner keeps their contacts (round-trips through sanitize)
+    const own = await owner("GET", "/api/data");
+    assert.ok(own.body.data.contacts && own.body.data.contacts[0].phone === "+15550100", "owner keeps their contacts");
+    // a family member's view of the owner never includes them
+    const fam = await mate("GET", "/api/family/carer");
+    assert.equal(fam.status, 200);
+    assert.ok(!JSON.stringify(fam.body).includes("+15550100") && !JSON.stringify(fam.body).includes("Mum"), "family cannot see emergency contacts");
+    // and the family listing / feed don't either
+    assert.ok(!JSON.stringify((await mate("GET", "/api/family")).body).includes("+15550100"), "family feed/list has no contacts");
+    // nor does the admin's view
+    assert.ok(!JSON.stringify((await admin("GET", "/api/admin/users/carer/data")).body).includes("+15550100"), "admin cannot see emergency contacts");
   });
 
   await test("data survives a server restart", async () => { await new Promise((r) => server.close(r)); await new Promise((r) => setTimeout(r, 150)); server = createServer(env); await new Promise((r) => server.listen(0, r)); base = "http://127.0.0.1:" + server.address().port; const c = client(); assert.equal((await c("POST", "/api/login", { username: "Amina", password: "secret9" })).status, 200); const d = await c("GET", "/api/data"); assert.equal(d.body.data.trips[0].name, "Trip to Tokyo"); });

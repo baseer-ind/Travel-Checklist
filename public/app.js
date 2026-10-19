@@ -71,6 +71,7 @@
   function emptyState() { return { next: 1, trips: [], curTrip: null, curList: null }; }
   function normalize(d) {
     d = d && d.trips ? d : emptyState();
+    if (!Array.isArray(d.contacts)) d.contacts = [];   // emergency contacts (private to the user)
     var max = 0;
     d.trips.forEach(function (t) { max = Math.max(max, numId(t.id)); t.lists.forEach(function (l) { max = Math.max(max, numId(l.id)); l.items.forEach(function (i) { max = Math.max(max, numId(i.id)); }); }); });
     d.next = Math.max(d.next || 1, max + 1);
@@ -528,11 +529,16 @@
     dataCard.appendChild(btn("v2-btn sec full", "Export all my data (JSON)", exportData));
     dataCard.appendChild(btn("v2-btn sec full v2-danger-btn", "Delete my account", deleteAccount));
     wrap.appendChild(dataCard);
+    var ecCard = el("div", "v2-card"); ecCard.style.cssText = "display:flex;flex-direction:column;gap:10px";
+    ecCard.appendChild(el("h2", "v2-h2", "Emergency contacts"));
+    ecCard.appendChild(el("p", "v2-sub", "Private to you — carry key phone numbers for emergencies. Never shown to family, groups or admins."));
+    ecCard.appendChild(btn("v2-btn sec full", "Manage emergency contacts", goContacts));
+    wrap.appendChild(ecCard);
     wrap.appendChild(btn("v2-btn sec full", "Log out", logout));
   }
   // Export all of the signed-in person's content as a JSON file (client-side; works offline).
   function exportData() {
-    var payload = { app: "Baggo", exportedAt: new Date().toISOString(), account: { username: user.username }, trips: (S && S.trips) || [] };
+    var payload = { app: "Baggo", exportedAt: new Date().toISOString(), account: { username: user.username }, trips: (S && S.trips) || [], contacts: (S && S.contacts) || [] };
     try {
       var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
@@ -555,6 +561,90 @@
         render();
       }).catch(function (e) { toast(errText(e)); });
     });
+  }
+  // ---- Emergency contacts: the user's own private data (names + phone numbers). Stored in the user
+  // document like their lists, but NEVER emitted by the server's visible() filter, so they never appear
+  // in any family / group / admin / share / feed response. ----
+  var cEdit = null;   // null = none; {} = adding; {id,...} = editing
+  function contacts() { if (S && !Array.isArray(S.contacts)) S.contacts = []; return (S && S.contacts) || []; }
+  function cPersist() { if (user) touch(); else guestPersist(); }
+  function goContacts() { cEdit = null; if (user) { view = "app"; appView = "contacts"; closeAppMenu(); render(); } else { gGo("contacts"); } }
+  function contactsPrompt() { return btn("v2-btn sec full", "🆘 Set up emergency contacts", goContacts); }
+  function saveContact(c) {
+    var name = String(c.name || "").trim(), phone = String(c.phone || "").trim(), relation = String(c.relation || "").trim();
+    if (!name && !phone) { cEdit.err = "Add at least a name or a phone number."; return renderContacts(); }
+    if (c.id) { var ex = contacts().filter(function (x) { return x.id === c.id; })[0]; if (ex) { ex.name = name; ex.phone = phone; ex.relation = relation; } }
+    else contacts().push({ id: nid(), name: name, phone: phone, relation: relation });
+    cEdit = null; cPersist(); renderContacts();
+  }
+  function deleteContact(id) { S.contacts = contacts().filter(function (c) { return c.id !== id; }); cPersist(); renderContacts(); }
+  function fmtContacts() {
+    var list = contacts(); if (!list.length) return "No emergency contacts saved.";
+    return "My emergency contacts:\n" + list.map(function (c) { return "• " + (c.name || "—") + (c.relation ? " (" + c.relation + ")" : "") + (c.phone ? ": " + c.phone : ""); }).join("\n");
+  }
+  function shareContacts() {
+    var text = fmtContacts();
+    if (navigator.share) { navigator.share({ title: "My emergency contacts", text: text }).catch(function () {}); }
+    else { try { navigator.clipboard.writeText(text); toast("Copied to clipboard"); } catch (e) { toast("Press and hold the text to copy it."); } }
+  }
+  function printWalletCard() {
+    var old = document.getElementById("walletCard"); if (old && old.parentNode) old.parentNode.removeChild(old);
+    var card = el("div"); card.id = "walletCard";
+    card.appendChild(el("h3", null, "Emergency contacts"));
+    if (user) card.appendChild(el("div", "wc-owner", user.username));
+    var list = contacts();
+    if (!list.length) card.appendChild(el("div", "wc-row", "No contacts saved."));
+    list.forEach(function (c) { var r = el("div", "wc-row"); r.appendChild(el("b", null, c.name + (c.relation ? " · " + c.relation : ""))); r.appendChild(el("span", null, c.phone || "")); card.appendChild(r); });
+    document.body.appendChild(card);
+    window.print();
+    setTimeout(function () { if (card.parentNode) card.parentNode.removeChild(card); }, 800);
+  }
+  function cField(label, key, type) {
+    var f = el("label", "v2-field"); f.appendChild(el("span", null, label));
+    var i = el("input", "v2-input"); i.type = type || "text"; i.value = cEdit[key] || ""; i.setAttribute("aria-label", label);
+    i.addEventListener("input", function () { cEdit[key] = i.value; });
+    f.appendChild(i); return f;
+  }
+  function renderContacts() {
+    if (S && !Array.isArray(S.contacts)) S.contacts = [];
+    var wrap = gShell(false);
+    if (user) appHeader(wrap, function () { view = "app"; appView = "home"; render(); });
+    else { var top = gBrand(wrap, false); top.insertBefore(btnIcon(G.back, "Back", function () { gGo(S.trips.length ? "home" : "welcome"); }), top.firstChild); }
+    wrap.appendChild(el("h1", "v2-h1", "Emergency contacts"));
+    wrap.appendChild(el("p", "v2-sub", "Private to you — never shown to your family, groups or admins. Carry them with you in case of an emergency."));
+    var list = contacts();
+    list.forEach(function (c) {
+      if (cEdit && cEdit.id === c.id) return;
+      var card = el("div", "v2-rowcard");
+      var topr = el("div", "top"); topr.appendChild(el("b", null, c.name || "(no name)")); card.appendChild(topr);
+      var meta = [c.relation, c.phone].filter(Boolean).join(" · ");
+      if (meta) card.appendChild(el("div", "v2-sub", meta));
+      var acts = el("div", "row");
+      acts.appendChild(btn("v2-btn sec", "Edit", function () { cEdit = Object.assign({}, c); renderContacts(); }));
+      acts.appendChild(btn("v2-btn sec v2-danger-btn", "Delete", function () { deleteContact(c.id); }));
+      card.appendChild(acts); wrap.appendChild(card);
+    });
+    if (!list.length && !cEdit) wrap.appendChild(el("p", "v2-sub", "No contacts yet. Add someone to reach in an emergency."));
+    if (cEdit) {
+      var form = el("div", "v2-card"); form.style.cssText = "display:flex;flex-direction:column;gap:10px";
+      form.appendChild(el("h2", "v2-h2", cEdit.id ? "Edit contact" : "Add a contact"));
+      if (cEdit.err) { var er = el("p", "v2-alert bad", cEdit.err); er.setAttribute("role", "alert"); form.appendChild(er); }
+      form.appendChild(cField("Name", "name"));
+      form.appendChild(cField("Phone", "phone", "tel"));
+      form.appendChild(cField("Relation (optional)", "relation"));
+      var frow = el("div"); frow.style.cssText = "display:flex;gap:10px";
+      frow.appendChild(btn("v2-btn", "Save", function () { saveContact(cEdit); }));
+      frow.appendChild(btn("v2-btn sec", "Cancel", function () { cEdit = null; renderContacts(); }));
+      form.appendChild(frow); wrap.appendChild(form);
+    } else {
+      wrap.appendChild(btn("v2-btn full", "Add a contact", function () { cEdit = {}; renderContacts(); }));
+    }
+    if (list.length) {
+      var tools = el("div"); tools.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin-top:4px";
+      tools.appendChild(btn("v2-btn sec", "Share", shareContacts));
+      tools.appendChild(btn("v2-btn sec", "Wallet card", printWalletCard));
+      wrap.appendChild(tools);
+    }
   }
   function loadAdmin() {
     Promise.all([api("GET", "/api/admin/users"), api("GET", "/api/admin/feed"), api("GET", "/api/admin/overview"), api("GET", "/api/admin/groups")]).then(function (r) {
@@ -1155,6 +1245,7 @@
     // The signed-in app (Home + Trip + New-trip) is v2: it builds its own shell (no v1 topbar/sidebar).
     if (view === "app") {
       if (appView === "new" && ntForm) return renderNewTripV2();
+      if (appView === "contacts") return renderContacts();
       return (appView === "trip" && trip()) ? renderTripV2() : renderHomeV2();
     }
     var main = $("main"); main.innerHTML = "";
@@ -1340,7 +1431,7 @@
     var l = cur;
     if (!l) { wrap.appendChild(el("p", "v2-sub", "No checklists yet. Add one like Documents, Clothing or Gadgets.")); return; }
     // list tools
-    if (l.kind === "leave") wrap.appendChild(el("p", "v2-note", "🔑 Reminders for before you walk out the door. They're only for you — never shown to family."));
+    if (l.kind === "leave") { wrap.appendChild(el("p", "v2-note", "🔑 Reminders for before you walk out the door. They're only for you — never shown to family.")); wrap.appendChild(contactsPrompt()); }
     else {
       var tools = el("div"); tools.style.cssText = "display:flex;flex-wrap:wrap;gap:8px";
       tools.appendChild(btn("v2-btn sec", "Rename list", renameList));
@@ -1744,6 +1835,7 @@
 
   function renderGuest() {
     if (gview === "new") return renderGNew();
+    if (gview === "contacts") return renderContacts();
     if (gview === "together") return renderGTogether();
     if (gview === "trips") return renderGTrips();
     if (gview === "trip" && gTrip()) return renderGTrip();
@@ -2032,6 +2124,7 @@
         li.appendChild(chk); li.appendChild(lab); li.appendChild(skip); ul.appendChild(li);
       });
       wrap.appendChild(ul);
+      if (l.kind === "leave") wrap.appendChild(contactsPrompt());
     });
     // quick add (to the current list, or the first list when on "All")
     var target = gcat === "all" ? t.lists[0] : t.lists.filter(function (l) { return l.id === gcat; })[0];

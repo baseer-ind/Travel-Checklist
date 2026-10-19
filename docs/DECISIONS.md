@@ -267,3 +267,16 @@ A trip can now record how you're travelling.
 **The one-page form stays** for the fast path: the guest Home's "Plan another trip" and the signed-in "Plan a trip" still use `tripFormFields`. The stepper is only the guest landing's first-trip flow.
 
 `npm test`: 41. `npm run test:browser`: 23 (adds: guided survey == one-page form for equivalent answers, and Skip yields a blank trip; guest tests re-pointed through the survey; one-page template/transport tests run on the signed-in form).
+
+## 2026-10-19 — Emergency contacts (private) + privacy policy update
+
+Users can store **emergency contacts** — `{ name, phone, relation }` — as their own private data.
+- **Model.** Stored as a top-level `S.contacts` array on the user document (not inside a trip), so it's reachable globally from Settings and from a "Set up emergency contacts" prompt on the trip's "Before you leave" list. `lib/shared.js` `sanitizeData` whitelists `contacts` (≤50, string-limited); everything else is unchanged. (Interpretation note: the spec said "a special list kind 'emergency'"; a dedicated top-level section was cleaner than a per-trip list and makes the privacy guarantee *structural* — see below.)
+- **Privacy — structural, not just filtered.** `visible()` only ever emits `trips`, so `contacts` are **never** part of any family / group / admin / share / feed response. The owner sees them via their own `/api/data`; no other surface can. A test asserts a family member and the admin cannot see another user's contacts.
+- **UI.** An Emergency-contacts screen (guest + signed-in): add / edit / delete; **Share** (`navigator.share`, else clipboard + toast); **Wallet card** (a print-only `#walletCard` + a `@media print` stylesheet — `window.print`, offline). Reached from Settings and from the "Before you leave" prompt.
+- **Export & delete.** The JSON export now includes `contacts`; deleting the account removes them with the rest of `data:<key>` (covered by the delete test).
+- **Legal.** `public/privacy.html` "What we collect" and `public/terms.html` "Your content" now state that Baggo stores emergency contacts (names + phone numbers) as private, user-owned data, shared only when the user chooses, removable via export/delete. (No separate `.md` sources exist for these pages — the HTML files are the source; their bodies are still placeholder pending the real legal copy.)
+
+**Conflict to resolve (flagged, not edited):** `docs/PRODUCT_DEFINITION.md` §(Privacy) lists "Never collected: … phone … contacts". This feature intentionally stores phone numbers/contacts, so that fixed line is now inaccurate. Per CLAUDE.md the Decisions table is fixed, so I did not edit it — the owner should reconcile that line with this feature.
+
+`npm test`: 42 (adds the contacts privacy test; delete test now also stores + checks a contact). `npm run test:browser`: 24 (adds add/share/delete + export-includes-contacts, with a11y).
