@@ -1697,8 +1697,12 @@
     if (left.length) {
       m.className = "v2-finish bad";
       var n = left.reduce(function (a, g) { return a + g.u.length; }, 0);
-      m.appendChild(el("div", null, "😬 Not done yet — " + n + (n === 1 ? " item is" : " items are") + " still waiting:"));
-      left.forEach(function (g) { var ul = el("ul"); ul.appendChild(el("div", null, g.l.emoji + " " + g.l.name)); g.u.forEach(function (i) { ul.appendChild(el("li", null, i.emoji + " " + i.name)); }); m.appendChild(ul); });
+      var det = document.createElement("details"); det.className = "v2-pending";
+      var sum = document.createElement("summary"); sum.style.cssText = "padding:10px 0;cursor:pointer;min-height:44px;display:flex;align-items:center";
+      sum.textContent = "😬 Not done yet — " + n + (n === 1 ? " item" : " items") + " still to pack. Tap to see " + (n === 1 ? "it" : "them") + ".";
+      det.appendChild(sum);
+      left.forEach(function (g) { var ul = el("ul"); ul.appendChild(el("div", null, g.l.emoji + " " + g.l.name)); g.u.forEach(function (i) { ul.appendChild(el("li", null, i.emoji + " " + i.name)); }); det.appendChild(ul); });
+      m.appendChild(det);
     } else {
       m.className = "v2-finish good"; m.textContent = "🎉 All packed for " + t.name + "! Have a great trip. ✈️";
       t.packedAt = Date.now(); touch();
