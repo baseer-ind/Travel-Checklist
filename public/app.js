@@ -1777,6 +1777,7 @@
     row("🔑", "Join with a code", joinGroup);
     row("🔗", "Open a shared list", askSharedCode);
     sheet.appendChild(el("div", "v2-sheet-sep"));
+    if (canInstall()) row("📲", "Install app", doInstall);
     row("⚙️", "My account", function () { go("account"); });
     if (user.role === "admin") row("👑", "Admin", function () { go("admin"); loadAdmin(); });
     row("🚪", "Log out", logout);
@@ -2157,6 +2158,7 @@
     var row = el("div"); row.style.cssText = "display:flex;flex-direction:column;gap:10px;width:100%;margin-top:6px";
     row.appendChild(btn("v2-btn full", "Start packing", startSurvey));
     row.appendChild(btn("v2-btn sec full", "Create account", guestCreateAccount));
+    if (canInstall()) row.appendChild(btn("v2-btn sec full", "📲 Install Baggo", doInstall));
     hero.appendChild(row);
     var why = el("div", "v2-why");
     [["🧳", "Ready-made lists", "Start from a template, tweak to taste"], ["👨‍👩‍👧", "Pack together", "See who's ready across your phones"], ["📴", "Works offline", "No account needed to start"]].forEach(function (w) {
@@ -2406,4 +2408,52 @@
     }).catch(function () { });
   }
   registerSW();
+
+  /* ---- Install (Add to Home Screen): capture the prompt so we can offer it in-app ---- */
+  var deferredInstall = null;
+  function isStandalone() { try { return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; } catch (e) { return false; } }
+  function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent || ""); }
+  function canInstall() { return !!deferredInstall || (isIOS() && !isStandalone()); }
+  function doInstall() {
+    if (deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.then(function () { deferredInstall = null; }).catch(function () {}); return; }
+    if (isIOS() && !isStandalone()) toast("To install: tap the Share button, then “Add to Home Screen”.");
+  }
+  window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); deferredInstall = e; try { render(); } catch (err) {} });
+  window.addEventListener("appinstalled", function () { deferredInstall = null; toast("Baggo installed 🎉"); });
+
+  /* ---- Mobile back button: step back within the app instead of closing it ---- */
+  function backOverlayClose() {
+    var sheet = document.querySelector(".v2-sheet-scrim"); if (sheet && sheet.parentNode) { sheet.parentNode.removeChild(sheet); return true; }
+    if (appMenuEl) { closeAppMenu(); return true; }
+    var md = $("modal"); if (md && md.classList.contains("show")) { closeModal(); return true; }
+    var sd = $("side"); if (sd && sd.classList.contains("open")) { closeSide(); return true; }
+    return false;
+  }
+  function backIsRoot() {
+    if (!user) { if (shared) return false; if (guestMode) return gview === "welcome" || gview === "home"; return true; }
+    if (view === "app") return appView === "home";
+    return false;
+  }
+  function backUp() {
+    if (!user) {
+      if (shared) { shared = null; render(); return; }
+      if (guestMode) { gGo(S && S.trips && S.trips.length ? "home" : "welcome"); return; }
+      return;
+    }
+    if (view === "member") { view = "family"; render(); return; }
+    appGo("home");
+  }
+  var lastRootBack = 0, backExiting = false;
+  function backArm() { try { history.pushState({ baggo: 1 }, ""); } catch (e) {} }
+  window.addEventListener("popstate", function () {
+    if (backExiting) return;
+    if (backOverlayClose()) { backArm(); return; }
+    if (backIsRoot()) {
+      var now = Date.now();
+      if (now - lastRootBack < 2000) { backExiting = true; history.back(); return; }
+      lastRootBack = now; toast("Press back again to exit"); backArm(); return;
+    }
+    backUp(); backArm();
+  });
+  backArm();
 })();
