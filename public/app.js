@@ -2387,18 +2387,22 @@
   /* ================= service worker ================= */
   function registerSW() {
     if (!("serviceWorker" in navigator)) return;
-    var updating = false, reloaded = false;
+    // Reload once when a NEW worker takes control (a real update). A first-time visitor has no
+    // controller at load, so being claimed by the first worker does NOT reload them mid-task.
+    var hadController = !!navigator.serviceWorker.controller, reloaded = false;
     navigator.serviceWorker.addEventListener("controllerchange", function () {
-      if (!updating || reloaded) return; reloaded = true;
-      setTimeout(function () { location.reload(); }, 800);   // let the "Updated" toast show, then pick up the new assets
+      if (!hadController || reloaded) return; reloaded = true;
+      toast("Updated to the latest version.");
+      setTimeout(function () { location.reload(); }, 600);
     });
     navigator.serviceWorker.register("/sw.js").then(function (reg) {
-      function activate(sw) { updating = true; toast("Updated to the latest version."); sw.postMessage({ type: "SKIP_WAITING" }); }
-      if (reg.waiting && navigator.serviceWorker.controller) activate(reg.waiting);
+      // The worker self-activates (skipWaiting + claim); this nudges a waiting one along too.
+      if (reg.waiting && navigator.serviceWorker.controller) reg.waiting.postMessage({ type: "SKIP_WAITING" });
       reg.addEventListener("updatefound", function () {
         var sw = reg.installing; if (!sw) return;
-        sw.addEventListener("statechange", function () { if (sw.state === "installed" && navigator.serviceWorker.controller) activate(sw); });
+        sw.addEventListener("statechange", function () { if (sw.state === "installed" && navigator.serviceWorker.controller) sw.postMessage({ type: "SKIP_WAITING" }); });
       });
+      setInterval(function () { reg.update(); }, 60 * 60 * 1000);   // check for a new build hourly while open
     }).catch(function () { });
   }
   registerSW();
