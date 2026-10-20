@@ -838,7 +838,7 @@
       wrap.appendChild(fb);
     }
     var tabs = el("div", "v2-listtabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Admin sections");
-    [["people", "People"], ["trips", "Trips"], ["groups", "Groups"], ["activity", "Activity"]].forEach(function (x) {
+    [["people", "People"], ["trips", "Trips"], ["families", "Families"], ["groups", "Groups"], ["activity", "Activity"]].forEach(function (x) {
       var b = el("button", "v2-tab"); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", adminTab === x[0] ? "true" : "false"); b.appendChild(document.createTextNode(x[1]));
       b.addEventListener("click", function () { adminTab = x[0]; render(); }); tabs.appendChild(b);
     });
@@ -847,6 +847,26 @@
     if (adminTab === "activity") {
       if (!adminFeed || !adminFeed.length) { wrap.appendChild(el("p", "v2-sub", "No activity yet.")); return; }
       var fd = el("div", "v2-feed"); adminFeed.forEach(function (ev) { var r = el("div", "v2-feedrow"); r.appendChild(el("span", null, feedLine(ev))); r.appendChild(el("span", "when", ago(ev.t))); fd.appendChild(r); }); wrap.appendChild(fd); return;
+    }
+    if (adminTab === "families") {
+      // Group every account by its family (circle) code — built from the users list, no extra call.
+      var fam = {};
+      adminUsers.forEach(function (u) { var k = u.circle || "__none__"; (fam[k] = fam[k] || []).push(u); });
+      var codes = Object.keys(fam).filter(function (k) { return k !== "__none__"; }).sort();
+      if (!codes.length) { wrap.appendChild(el("p", "v2-sub", "No families yet. A family forms when someone creates a code in Together and others join it.")); }
+      codes.forEach(function (code) {
+        var mem = fam[code];
+        var c = el("div", "v2-rowcard"); c.setAttribute("data-family", code);
+        var top = el("div", "top"); top.appendChild(el("b", null, "👪 " + fmtCode(code))); top.appendChild(el("span", "v2-by", mem.length + (mem.length === 1 ? " person" : " people"))); c.appendChild(top);
+        c.appendChild(el("div", "v2-stat", mem.map(function (u) { return u.username + (u.role === "admin" ? " (admin)" : ""); }).join(", ")));
+        wrap.appendChild(c);
+      });
+      var none = fam["__none__"];
+      if (none && none.length) {
+        wrap.appendChild(el("h2", "v2-h2", "Not in a family (" + none.length + ")"));
+        wrap.appendChild(el("p", "v2-sub", none.map(function (u) { return u.username; }).join(", ")));
+      }
+      return;
     }
     if (adminTab === "groups") {
       if (!adminGroups.length) { wrap.appendChild(el("p", "v2-sub", "No groups yet.")); return; }
