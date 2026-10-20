@@ -534,7 +534,7 @@ async function a11y(page, label) {
   });
 
   // Shared v2 frame on desktop: content centred (not left-pinned), tab bar under the frame, no h-scroll.
-  await test("desktop shell: content centred and tab bar under the frame at 768px and 1280px", async () => {
+  await test("desktop shell: left rail replaces the bottom tab bar and content widens (1280/768), reverts on mobile", async () => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: "block" });
     const pg = await ctx.newPage();
     await pg.goto(base + "/", { waitUntil: "networkidle" });
@@ -542,32 +542,77 @@ async function a11y(page, label) {
     await pg.getByLabel("Trip name").fill("Oslo trip");
     await pg.getByRole("button", { name: "Create trip" }).click();
     await pg.locator("#main h1", { hasText: "Oslo trip" }).first().waitFor({ timeout: 8000 });
-    await pg.getByLabel("Main").getByRole("button", { name: "Home" }).click();
+    // the bottom tab bar is hidden on desktop; navigate Home via the rail
+    await pg.getByLabel("Primary").getByRole("button", { name: "Home" }).click();
     await pg.getByText("Next up").waitFor({ timeout: 8000 });
 
     const geom = async () => pg.evaluate(() => {
+      const rail = document.querySelector(".v2-rail");
+      const tab = document.querySelector(".v2-tabbar");
       const w = document.querySelector(".v2-wrap").getBoundingClientRect();
-      const tb = document.querySelector(".v2-tabbar").getBoundingClientRect();
+      const rr = rail ? rail.getBoundingClientRect() : null;
       return {
         iw: window.innerWidth,
-        wrap: { left: w.left, right: w.right, width: w.width },
-        tab: { left: tb.left, right: tb.right },
+        railVisible: !!rail && getComputedStyle(rail).display !== "none",
+        tabVisible: !!tab && getComputedStyle(tab).display !== "none",
+        railW: rr ? Math.round(rr.width) : 0, railRight: rr ? rr.right : 0,
+        wrapLeft: w.left, wrapWidth: w.width,
         hscroll: document.documentElement.scrollWidth - window.innerWidth,
       };
     });
-    for (const width of [1280, 768]) {
-      await pg.setViewportSize({ width, height: 800 });
-      await pg.waitForTimeout(80);
-      const g = await geom();
-      assert.ok(g.hscroll <= 1, `@${width}px no h-scroll (overflow ${g.hscroll})`);
-      // centred: left gutter ~= right gutter, and not pinned to the left edge
-      const leftGutter = g.wrap.left, rightGutter = g.iw - g.wrap.right;
-      assert.ok(Math.abs(leftGutter - rightGutter) <= 2, `@${width}px content centred (gutters ${leftGutter} vs ${rightGutter})`);
-      assert.ok(leftGutter > 40, `@${width}px content not left-pinned (left gutter ${leftGutter})`);
-      assert.ok(g.wrap.width <= 561, `@${width}px frame capped at its max-width (${g.wrap.width})`);
-      // tab bar sits under the same frame column
-      assert.ok(Math.abs(g.tab.left - g.wrap.left) <= 2 && Math.abs(g.tab.right - g.wrap.right) <= 2, `@${width}px tab bar aligned to frame (tab ${g.tab.left}-${g.tab.right}, frame ${g.wrap.left}-${g.wrap.right})`);
-    }
+    // desktop >=1024px: labelled rail (~248px), wide content beside it, no bottom tab bar
+    let g = await geom();
+    assert.ok(g.hscroll <= 1, `@1280 no h-scroll (${g.hscroll})`);
+    assert.ok(g.railVisible, "@1280 rail visible");
+    assert.ok(!g.tabVisible, "@1280 bottom tab bar hidden");
+    assert.ok(Math.abs(g.railW - 248) <= 2, `@1280 labelled rail width (${g.railW})`);
+    assert.ok(g.wrapLeft >= g.railRight - 1, `@1280 content sits beside the rail (wrap ${g.wrapLeft} / rail ${g.railRight})`);
+    assert.ok(g.wrapWidth > 561, `@1280 content wider than the mobile cap (${g.wrapWidth})`);
+
+    // tablet 768px: icon-only rail (~86px), still a website layout
+    await pg.setViewportSize({ width: 768, height: 800 });
+    await pg.waitForTimeout(100);
+    g = await geom();
+    assert.ok(g.hscroll <= 1, `@768 no h-scroll (${g.hscroll})`);
+    assert.ok(g.railVisible, "@768 rail visible");
+    assert.ok(!g.tabVisible, "@768 bottom tab bar hidden");
+    assert.ok(Math.abs(g.railW - 86) <= 2, `@768 icon-only rail width (${g.railW})`);
+    assert.ok(g.wrapLeft >= g.railRight - 1, "@768 content sits beside the rail");
+
+    // mobile 375px: the rail is gone and the bottom tab bar is back (mobile layout unchanged)
+    await pg.setViewportSize({ width: 375, height: 800 });
+    await pg.waitForTimeout(100);
+    g = await geom();
+    assert.ok(!g.railVisible, "@375 rail hidden");
+    assert.ok(g.tabVisible, "@375 bottom tab bar visible");
+    assert.ok(g.hscroll <= 1, `@375 no h-scroll (${g.hscroll})`);
+    await ctx.close();
+  });
+
+  await test("desktop rail: signed-in nav shows Home/Together/Settings (+Admin for admins) and an account menu", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    // a normal member sees Home / Together / Settings, no Admin, plus the account button (opens the menu)
+    await pg.evaluate(() => fetch("/api/signup", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ username: "Rae", password: "secret9", code: "family" }) }));
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    const rail = pg.getByLabel("Primary");
+    await rail.getByRole("button", { name: "Home" }).waitFor({ timeout: 8000 });
+    assert.equal(await rail.getByRole("button", { name: "Together" }).count(), 1, "rail has Together");
+    assert.equal(await rail.getByRole("button", { name: "Settings" }).count(), 1, "rail has Settings");
+    assert.equal(await rail.getByRole("button", { name: "Admin" }).count(), 0, "member has no Admin item");
+    const tabVisible = await pg.evaluate(() => { const t = document.querySelector(".v2-tabbar"); return !!t && getComputedStyle(t).display !== "none"; });
+    assert.ok(!tabVisible, "no bottom tab bar on desktop");
+    // the account button opens the overflow menu (groups / shared lists / log out stay reachable on desktop)
+    await rail.getByRole("button", { name: /Menu and account/ }).click();
+    await pg.getByRole("button", { name: "Log out" }).waitFor({ timeout: 8000 });
+    await pg.keyboard.press("Escape");
+
+    // the admin sees the Admin item too
+    await pg.evaluate(() => fetch("/api/logout", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: "{}" }));
+    await pg.evaluate(() => fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ username: "admin", password: "test-admin-pw" }) }));
+    await pg.goto(base + "/", { waitUntil: "networkidle" });
+    await pg.getByLabel("Primary").getByRole("button", { name: "Admin" }).waitFor({ timeout: 8000 });
     await ctx.close();
   });
 

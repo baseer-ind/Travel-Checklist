@@ -325,3 +325,62 @@ body.v2 .v2-seg button[aria-selected="true"] { background: #ffffff; color: var(-
 .v2-confetti { position: fixed; inset: 0; z-index: 1200; pointer-events: none; }
 @keyframes v2-sheet-up { from { transform: translateY(18px); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .v2-sheet-share { animation: none; } }
+
+/* ======================================================================
+   Desktop / responsive website layout (Design_6 handoff).
+   Phones (<768px) are untouched: the rail is display:none and the card
+   wrappers are display:contents, so the mobile bottom-tab layout is byte
+   -for-byte unchanged. At >=768px the app becomes a two-column website
+   with a left navigation rail (icon-only), and at >=1024px the rail gains
+   labels and the content column widens — matching the approved prototype.
+   ====================================================================== */
+.v2-rail { display: none; }
+.v2-cardgrid { display: contents; }   /* phones: wrapper is transparent; cards flow in .v2-wrap as before */
+.v2-memgrid { display: flex; flex-direction: column; gap: 10px; }   /* phones: the family members list, unchanged */
+
+@media (min-width: 768px) {
+  /* two-column shell: a fixed paper rail beside the scrolling white content sheet, on the warm canvas.
+     Only screens that carry the rail (.has-rail) adopt the website layout; the no-rail Welcome and
+     survey keep their centred narrow hero. */
+  .main.v2.has-rail { max-width: none; margin: 0; padding: 0; display: flex; flex-direction: row; align-items: stretch; min-height: 100vh; background: var(--canvas); }
+  .v2-rail {
+    display: flex; flex-direction: column; gap: 4px; flex: none; box-sizing: border-box;
+    width: 86px; padding: 18px 12px; background: var(--surface); border-inline-end: 1px solid var(--line);
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  .v2-rail-logo { display: flex; align-items: center; gap: 10px; padding: 2px 6px 14px; justify-content: center; }
+  .v2-rail-logo .baggo-mark { width: 30px; height: 30px; flex: none; }
+  .v2-rail-word { display: none; font-weight: 800; font-size: 19px; letter-spacing: -.02em; color: var(--ink); }
+  .v2-rail-btn, .v2-rail-acct {
+    display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 8px 12px; position: relative;
+    border: 0; border-radius: 10px; background: transparent; color: var(--ink);
+    font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; justify-content: center;
+  }
+  .v2-rail-btn:hover, .v2-rail-acct:hover { background: var(--canvas); }
+  .v2-rail-btn.cur { background: var(--canvas); font-weight: 700; }
+  .v2-rail-ic { display: flex; flex: none; }
+  .v2-rail-label, .v2-rail-accttext, .v2-rail-badge { display: none; }
+  .v2-rail-spacer { flex: 1; min-height: 8px; }
+  .v2-rail-avatar { width: 34px; height: 34px; flex: none; border-radius: 50%; background: var(--together); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+  .v2-rail-avatar.ghost { background: var(--ink); }
+  .v2-rail-accttext { flex-direction: column; gap: 1px; min-width: 0; text-align: start; }
+  .v2-rail-acctname { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v2-rail-acctsub { font-size: 12px; color: var(--slate); }
+
+  /* content column: a centred white sheet, no fixed bottom bar */
+  .has-rail .v2-wrap { flex: 1; min-width: 0; max-width: 760px; margin: 0 auto; min-height: 100vh; padding: 26px 28px 44px !important; }
+  /* the mobile chrome the rail replaces */
+  .has-rail .v2-tabbar { display: none; }
+  .has-rail .v2-top .v2-brand, .has-rail .v2-topmenu, .has-rail .v2-top .v2-link { display: none; }
+
+  /* trip / member lists flow into a responsive grid instead of a single column */
+  .has-rail .v2-cardgrid, .has-rail .v2-memgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; align-items: start; }
+}
+
+@media (min-width: 1024px) {
+  .v2-rail { width: 248px; }
+  .v2-rail-logo, .v2-rail-btn, .v2-rail-acct { justify-content: flex-start; }
+  .v2-rail-word, .v2-rail-label, .v2-rail-accttext { display: flex; }
+  .v2-rail-badge { display: inline-flex; margin-inline-start: auto; background: var(--together-bg); color: var(--together-fg); font-size: var(--fs-meta); font-weight: 700; padding: 1px 9px; border-radius: var(--radius-chip); }
+  .has-rail .v2-wrap { max-width: 1100px; padding: 32px 40px 48px !important; }
+}

@@ -1058,7 +1058,7 @@
     allTrips.sort(function (a, b) { var ad = a.t.travelDate || "9999-99", bd = b.t.travelDate || "9999-99"; return ad < bd ? -1 : ad > bd ? 1 : 0; });
     if (allTrips.length) {
       wrap.appendChild(el("h2", "v2-h2", "Trips you're packing for together"));
-      var tl = el("div"); tl.style.cssText = "display:flex;flex-direction:column;gap:10px;margin-bottom:6px";
+      var tl = el("div", "v2-memgrid"); tl.style.marginBottom = "6px";   // flex column on phones, grid on desktop
       allTrips.forEach(function (x) {
         var t = x.t, m = x.m;
         var card = el("button", "v2-card"); card.type = "button"; card.style.cssText = "display:block;width:100%;text-align:left";
@@ -1081,7 +1081,7 @@
       wrap.appendChild(es);
     }
     wrap.appendChild(el("h2", "v2-h2", "People"));
-    var people = el("div"); people.style.cssText = "display:flex;flex-direction:column;gap:10px";
+    var people = el("div", "v2-memgrid");
     family.members.forEach(function (m) {
       var ag = famAgg(m);
       var row = el("button", "v2-member"); row.type = "button"; row.setAttribute("data-member", m.key);
@@ -1503,7 +1503,7 @@
     top.appendChild(brandEl(false));
     var sp = el("div"); sp.style.flex = "1"; top.appendChild(sp);
     var st = el("span", "status " + saveState, STATUS_TEXT[saveState]); st.id = "saveStatus"; st.setAttribute("role", "status"); st.style.cssText = "font-size:var(--fs-meta);color:var(--slate);font-family:var(--font-mono);margin-inline-end:4px;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"; top.appendChild(st);
-    var menu = el("button", "v2-iconbtn"); menu.type = "button"; menu.setAttribute("aria-label", "Menu" + (unread ? " (" + unread + " new)" : "")); menu.appendChild(gsvg(G.menu));
+    var menu = el("button", "v2-iconbtn v2-topmenu"); menu.type = "button"; menu.setAttribute("aria-label", "Menu" + (unread ? " (" + unread + " new)" : "")); menu.appendChild(gsvg(G.menu));
     if (unread) { var d = el("span"); d.style.cssText = "position:absolute;margin:-14px 0 0 12px;width:8px;height:8px;border-radius:50%;background:var(--together)"; menu.style.position = "relative"; menu.appendChild(d); }
     menu.addEventListener("click", openAppMenu); top.appendChild(menu);
     wrap.appendChild(top); return top;
@@ -1542,7 +1542,8 @@
     var others = active.filter(function (t) { return t.id !== next.id; });
     if (others.length) {
       wrap.appendChild(el("div", "v2-kicker", "Your other trips"));
-      others.forEach(function (t) { wrap.appendChild(tripCardV2(t, tripCounts(t), false)); });
+      var grid = el("div", "v2-cardgrid"); wrap.appendChild(grid);
+      others.forEach(function (t) { grid.appendChild(tripCardV2(t, tripCounts(t), false)); });
     }
     wrap.appendChild(btn("v2-btn sec full", "Plan another trip", newTripV2));
     wrap.appendChild(btn("v2-btn sec full", "Copy a trip", copyTripFromHome));
@@ -1921,7 +1922,8 @@
   function gsvg(d, w) { var s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("width", 18); s.setAttribute("height", 18); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", w || 2); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true"); var pth = document.createElementNS("http://www.w3.org/2000/svg", "path"); pth.setAttribute("d", d); s.appendChild(pth); return s; }
   var G = { tick: "M5 12.5 10 17.5 19 7", skip: "M18 6 6 18", star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.6 1-5.8L3.5 9.7l5.9-.9z", back: "M15 6l-6 6 6 6", plus: "M12 5v14M5 12h14", home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z", bag: "M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z", people: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20a7 7 0 0 1 14 0M17 11a3 3 0 1 0-1-5.8M22 20a7 7 0 0 0-5-6.7",
     eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", eyeoff: "M3 3l18 18 M10.6 10.6a3 3 0 0 0 4.2 4.2 M9.8 5.1A9.6 9.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9 M6 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 3-.5",
-    link: "M9 15l6-6 M10.5 7.5l1-1a4 4 0 0 1 6 6l-1 1 M13.5 16.5l-1 1a4 4 0 0 1-6-6l1-1", menu: "M4 7h16M4 12h16M4 17h16", pencil: "M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3z M13.5 6.5l3 3", trash: "M4 7h16 M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2 M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" };
+    link: "M9 15l6-6 M10.5 7.5l1-1a4 4 0 0 1 6 6l-1 1 M13.5 16.5l-1 1a4 4 0 0 1-6-6l1-1", menu: "M4 7h16M4 12h16M4 17h16", pencil: "M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3z M13.5 6.5l3 3", trash: "M4 7h16 M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2 M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13",
+    gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.1 12.9a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V20a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.8 1.1z", shield: "M12 3l8 3v6c0 5-3.4 8-8 9-4.6-1-8-4-8-9V6z" };
 
   function enterGuest() {
     guestMode = true; user = null; gcat = "all";
@@ -2123,10 +2125,76 @@
     return a[0];
   }
   function gNewForm() { gform = newForm(); gGo("new"); }
-  function gShell(hasTabs) {
+  /* ================= desktop rail (>=768px) =================
+     A left navigation rail that replaces the mobile bottom tab bar / overflow menu on wider
+     viewports (icon-only 768–1023px, icon+label >=1024px). Pure presentation of each mode's
+     existing navigation — it reuses the same handlers, so no new screens or features. On phones
+     it is display:none (the mobile layout is untouched). */
+  function railApplies() {
+    if (user) return true;                                     // signed-in: every app screen
+    if (!guestMode) return false;                              // sign-in / shared-stranger screens
+    if (gview === "new" && gform && gform._survey) return false;   // first-run guided survey is a clean onboarding
+    return ["home", "trips", "trip", "together", "contacts", "new"].indexOf(gview) >= 0;
+  }
+  function railBtn(n) {
+    var b = el("button", "v2-rail-btn" + (n.active ? " cur" : "")); b.type = "button";
+    if (n.active) b.setAttribute("aria-current", "page");
+    var ic = el("span", "v2-rail-ic"); ic.appendChild(gsvg(n.icon)); b.appendChild(ic);
+    b.appendChild(el("span", "v2-rail-label", n.label));
+    if (n.badge) { b.setAttribute("aria-label", n.label + " (" + n.badge + " new)"); b.appendChild(el("span", "v2-rail-badge", String(n.badge))); }
+    b.addEventListener("click", n.go);
+    return b;
+  }
+  function railNav() {
+    if (user) return [
+      { label: "Home", icon: G.home, active: view === "app" && appView !== "contacts", go: function () { appGo("home"); } },
+      { label: "Together", icon: G.people, active: view === "family" || view === "member", badge: unread || 0, go: function () { go("family"); loadFamily(); } },
+    ];
+    return [
+      { label: "Home", icon: G.home, active: gview === "home" || gview === "trip" || (gview === "new" && !(gform && gform._survey)), go: function () { gGo("home"); } },
+      { label: "Trips", icon: G.bag, active: gview === "trips", go: function () { gGo("trips"); } },
+      { label: "Together", icon: G.people, active: gview === "together", go: function () { gGo("together"); } },
+    ];
+  }
+  function railAccount() {
+    if (user) {
+      var b = el("button", "v2-rail-acct"); b.type = "button"; b.setAttribute("aria-label", "Menu and account");
+      var av = el("span", "v2-rail-avatar", initials(user.username)); av.style.background = avatarColor(user.username); av.setAttribute("aria-hidden", "true");
+      b.appendChild(av);
+      var txt = el("span", "v2-rail-accttext");
+      txt.appendChild(el("span", "v2-rail-acctname", user.username));
+      txt.appendChild(el("span", "v2-rail-acctsub", user.role === "admin" ? "admin" : "account"));
+      b.appendChild(txt);
+      b.addEventListener("click", openAppMenu);                // groups, shared lists and log out stay reachable
+      return b;
+    }
+    var g = el("button", "v2-rail-acct"); g.type = "button"; g.setAttribute("aria-label", "Sign in or create an account");
+    var ic = el("span", "v2-rail-avatar ghost"); ic.appendChild(gsvg(G.people)); ic.setAttribute("aria-hidden", "true"); g.appendChild(ic);
+    var gt = el("span", "v2-rail-accttext");
+    gt.appendChild(el("span", "v2-rail-acctname", "Sign in"));
+    gt.appendChild(el("span", "v2-rail-acctsub", "or create account"));
+    g.appendChild(gt);
+    g.addEventListener("click", guestSignIn);
+    return g;
+  }
+  function buildRail() {
+    var rail = el("nav", "v2-rail"); rail.setAttribute("aria-label", "Primary");
+    var logo = el("div", "v2-rail-logo"); logo.appendChild(baggoMarkImg(30)); logo.appendChild(el("span", "v2-rail-word", "Baggo"));
+    rail.appendChild(logo);
+    railNav().forEach(function (n) { rail.appendChild(railBtn(n)); });
+    if (user) {
+      rail.appendChild(railBtn({ label: "Settings", icon: G.gear, active: view === "account", go: function () { go("account"); } }));
+      if (user.role === "admin") rail.appendChild(railBtn({ label: "Admin", icon: G.shield, active: view === "admin" || view === "adminuser", go: function () { go("admin"); loadAdmin(); } }));
+    }
+    rail.appendChild(el("div", "v2-rail-spacer"));
+    rail.appendChild(railAccount());
+    return rail;
+  }
+  function gShell(hasTabs, noRail) {
     document.body.className = "v2";
     var side = $("side"), scrim = $("scrim"); if (side) side.style.display = "none"; if (scrim) scrim.style.display = "none";   // hide v1 chrome in guest mode
     var main = $("main"); main.innerHTML = ""; main.className = "main v2";
+    if (!noRail && railApplies()) { main.appendChild(buildRail()); main.classList.add("has-rail"); }
     var wrap = el("div", "v2-wrap"); main.appendChild(wrap);
     if (hasTabs) wrap.style.paddingBottom = "96px";
     return wrap;
@@ -2171,7 +2239,7 @@
   }
   // Landing: brand lockup + one plain line + two actions + a 3-item "why" strip. This in-app screen IS the landing.
   function renderGWelcome() {
-    var wrap = gShell(false); gBrand(wrap, true);
+    var wrap = gShell(false, true); gBrand(wrap, true);
     var hero = el("div", "v2-empty"); hero.style.paddingTop = "26px";
     hero.appendChild(brandLockup());
     hero.appendChild(el("p", "v2-sub", "Your travel packing companion — never leave a thing behind."));
@@ -2190,7 +2258,7 @@
   }
   // The guided survey: the first trip as a short, skippable stepper (reuses buildTripFromForm via gCreateTrip).
   function renderSurvey() {
-    var f = gform; var wrap = gShell(false);
+    var f = gform; var wrap = gShell(false, true);
     var top = gBrand(wrap, false);
     top.insertBefore(btnIcon(G.back, "Back", function () { if (f._step > 1) { f._step--; renderGuest(); } else { gform = null; gGo(S.trips.length ? "home" : "welcome"); } }), top.firstChild);
     var TOTAL = 4, titles = ["", "What kind of trip?", "Who's going? (optional)", "Traveling by? (optional)", "Trip name & dates"];
@@ -2299,10 +2367,11 @@
     var others = active.filter(function (t) { return t.id !== next.id; });
     if (others.length) {
       wrap.appendChild(el("div", "v2-kicker", "Your other trips"));
+      var ogrid = el("div", "v2-cardgrid"); wrap.appendChild(ogrid);
       others.forEach(function (t) {
         var cc = gCounts(t); var row = el("button", "v2-trip"); row.type = "button"; row.style.background = "var(--bg)";
         row.appendChild(el("div", "tn", t.name)); row.appendChild(el("div", "td", gCountdown(t) + " · " + cc.packed + "/" + cc.need + " packed"));
-        row.addEventListener("click", function () { gOpenTrip(t); }); wrap.appendChild(row);
+        row.addEventListener("click", function () { gOpenTrip(t); }); ogrid.appendChild(row);
       });
     }
     wrap.appendChild(btn("v2-btn sec full", "Plan another trip", gNewForm));
@@ -2326,6 +2395,7 @@
     wrap.appendChild(el("h1", "v2-h1", "Trips"));
     var active = gActive();
     if (!active.length) wrap.appendChild(el("p", "v2-sub", "No active trips. Plan one below."));
+    var tgrid = el("div", "v2-cardgrid"); wrap.appendChild(tgrid);
     active.forEach(function (t) {
       var cc = gCounts(t); var card = el("div", "v2-card"); card.style.display = "flex"; card.style.flexDirection = "column"; card.style.gap = "10px";
       var open = el("button", "v2-trip"); open.type = "button"; open.style.cssText = "background:transparent;border:0;padding:0;text-align:start;cursor:pointer";
@@ -2334,7 +2404,7 @@
       var acts = el("div"); acts.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
       acts.appendChild(btn("v2-btn sec", "Duplicate", function () { gDuplicateTrip(t); }));
       acts.appendChild(btn("v2-btn sec", "Archive", function () { gArchiveTrip(t); }));
-      card.appendChild(acts); wrap.appendChild(card);
+      card.appendChild(acts); tgrid.appendChild(card);
     });
     wrap.appendChild(btn("v2-btn full", "Plan a trip", gNewForm));
     var arch = gArchived();
