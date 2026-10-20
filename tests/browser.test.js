@@ -297,7 +297,7 @@ async function a11y(page, label) {
     const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });   // SW enabled: no mid-create reload now that claim is gone
     const pg = await ctx.newPage();
     let taps = 0;
-    pg.on("framenavigated", (fr) => { if (fr === pg.mainFrame()) navs++; });
+    pg.on("load", () => navs++);   // count real document loads only (pushState for the back button is not a reload)
     let navs = 0;
     // record any data-bearing API calls (there must be none in the guest flow)
     const sent = [];
