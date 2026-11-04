@@ -1648,6 +1648,7 @@
     trTools.appendChild(btn("v2-btn sec", "Share & save", function () { openShareSheet({ trip: t }); }));
     if (t.transport) trTools.appendChild(btn("v2-btn sec", "Directions", function () { tripDirections(t); }));
     wrap.appendChild(trTools);
+    var trTips = travelTipsSection(t); if (trTips) wrap.appendChild(trTips);
     if (sharePanel && sharePanel.tripId === t.id) wrap.appendChild(buildShareV2(t));
     // Progress: packed of (packed + to-go), labelled "% packed" — progress, not a readiness score.
     var pct = tc.need ? Math.round(tc.p / tc.need * 100) : 0;
@@ -1904,21 +1905,39 @@
   var TRANSPORT = [
     { id:"plane", emoji:"✈️", label:"Plane",
       addon:["Air travel","✈️","transport",[["🛂","Passport / ID",1,true],["🎟️","Tickets / booking",1,true],["📱","Web check-in done"],["🧳","Baggage within airline limit"],["🔌","Charger & power bank"]]],
-      travel:["Reach the airport 2–3 hours before","Web check-in usually opens ~48h before","Keep ID & boarding pass handy"] },
+      travel:["Reach the airport 2–3 hours before","Web check-in usually opens ~48h before","Keep ID & boarding pass handy"],
+      tips:["Do your web check-in early — it usually opens ~48h before.","Reach the airport 2–3 hours before departure.","Check your airline's cabin-bag size and weight before you pack.","Charge your phone and carry a power bank.","Keep ID and boarding pass easy to reach."] },
     { id:"train", emoji:"🚆", label:"Train",
       addon:["Train travel","🚆","transport",[["🪪","ID card",1,true],["🎟️","Ticket / PNR",1,true],["💺","Coach & seat noted"],["🍿","Snacks & water"],["🔌","Power bank"]]],
-      travel:["Reach the station 30–45 min before","Check the platform number","Note your coach position"] },
+      travel:["Reach the station 30–45 min before","Check the platform number","Note your coach position"],
+      tips:["Reach the station 30–45 minutes early.","Note your coach, seat, and the platform.","Carry snacks and a water bottle for the journey.","Keep your ticket/PNR and ID handy.","A power bank helps on long routes."] },
     { id:"road", emoji:"🚗", label:"By road / car",
       addon:["Road trip","🚗","transport",[["🪪","Driving licence",1,true],["📄","Vehicle papers (RC, insurance, PUC)",1,true],["💳","FASTag balance"],["⛽","Full fuel tank"],["🛞","Tyre & spare check"],["🔌","Phone mount & charger"]]],
-      travel:["Fuel up the night before","Check tyres & spare","Plan your rest stops"] },
+      travel:["Fuel up the night before","Check tyres & spare","Plan your rest stops"],
+      tips:["Fuel up and check tyres (including the spare) the night before.","Check your FASTag balance.","Carry your licence and vehicle papers.","Plan your rest stops.","Phone mount, charger, water and snacks in reach."] },
     { id:"bus", emoji:"🚌", label:"Bus",
       addon:["Bus travel","🚌","transport",[["🪪","ID card",1,true],["🎟️","Ticket",1,true],["📍","Boarding point noted"],["🍿","Snacks & water"],["🔌","Power bank"]]],
-      travel:["Reach the boarding point 15–20 min before","Note the boarding point"] },
+      travel:["Reach the boarding point 15–20 min before","Note the boarding point"],
+      tips:["Reach the boarding point 15–20 minutes early.","Note the boarding point and operator.","Carry snacks, water and a power bank.","Keep your ticket and ID handy.","Travel-sickness tablets if you're prone to it."] },
     { id:"ship", emoji:"🚢", label:"Ship / ferry",
       addon:["Sea travel","🚢","transport",[["🛂","ID / passport",1,true],["🎟️","Ticket / boarding",1,true],["💊","Motion-sickness tablets"],["🧥","Light jacket"]]],
-      travel:["Reach the port early for check-in","Keep ID & ticket handy"] }
+      travel:["Reach the port early for check-in","Keep ID & ticket handy"],
+      tips:["Reach the port early for check-in.","Keep ID and ticket handy.","Carry travel-sickness tablets.","A light jacket for the deck breeze.","Keep essentials in a small bag you carry on."] }
   ];
   function transportById(id) { for (var i = 0; i < TRANSPORT.length; i++) if (TRANSPORT[i].id === id) return TRANSPORT[i]; return null; }
+  // A collapsed "Travel tips" panel for the trip's transport mode. Preparation reminders only — it never
+  // states a visa / entry / health / customs rule. Returns null when the trip has no transport mode.
+  function travelTipsSection(t) {
+    if (!t || !t.transport) return null;
+    var tp = transportById(t.transport);
+    if (!tp || !tp.tips || !tp.tips.length) return null;
+    var d = el("details", "v2-tips");
+    d.appendChild(el("summary", null, tp.emoji + " Travel tips for " + tp.label));
+    var ul = el("ul");
+    tp.tips.forEach(function (s) { ul.appendChild(el("li", null, s)); });
+    d.appendChild(ul);
+    return d;
+  }
   function gsvg(d, w) { var s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("width", 18); s.setAttribute("height", 18); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", w || 2); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true"); var pth = document.createElementNS("http://www.w3.org/2000/svg", "path"); pth.setAttribute("d", d); s.appendChild(pth); return s; }
   var G = { tick: "M5 12.5 10 17.5 19 7", skip: "M18 6 6 18", star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.6 1-5.8L3.5 9.7l5.9-.9z", back: "M15 6l-6 6 6 6", plus: "M12 5v14M5 12h14", home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z", bag: "M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z", people: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20a7 7 0 0 1 14 0M17 11a3 3 0 1 0-1-5.8M22 20a7 7 0 0 0-5-6.7",
     eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", eyeoff: "M3 3l18 18 M10.6 10.6a3 3 0 0 0 4.2 4.2 M9.8 5.1A9.6 9.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9 M6 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 3-.5",
@@ -2430,6 +2449,7 @@
     gTools.appendChild(btn("v2-btn sec", "Share & save", function () { openShareSheet({ trip: t }); }));
     if (t.transport) gTools.appendChild(btn("v2-btn sec", "Directions", function () { tripDirections(t); }));
     wrap.appendChild(gTools);
+    var gTips = travelTipsSection(t); if (gTips) wrap.appendChild(gTips);
     var prow = el("div"); prow.style.cssText = "display:flex;justify-content:space-between;align-items:baseline;gap:10px";
     prow.appendChild(el("span", "v2-sub", c.packed + " of " + c.need + " packed"));
     prow.appendChild(el("span", "v2-pct", c.pct + "% packed")); wrap.appendChild(prow);

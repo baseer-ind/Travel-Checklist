@@ -384,3 +384,16 @@ body.v2 .v2-seg button[aria-selected="true"] { background: #ffffff; color: var(-
   .v2-rail-badge { display: inline-flex; margin-inline-start: auto; background: var(--together-bg); color: var(--together-fg); font-size: var(--fs-meta); font-weight: 700; padding: 1px 9px; border-radius: var(--radius-chip); }
   .has-rail .v2-wrap { max-width: 1100px; padding: 32px 40px 48px !important; }
 }
+
+/* Mode-specific travel tips: a collapsed panel on the Trip screen when a transport mode is set.
+   Preparation reminders only — never a stated visa/entry/health/customs rule. New component (no
+   restyle of existing ones); uses existing tokens. The +/- affordance is a static glyph swap, so
+   there is no animation to disable under reduced-motion. The summary is a >=44px touch target. */
+.v2-tips { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-card); overflow: hidden; }
+.v2-tips > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 14px; cursor: pointer; font-weight: 700; font-size: var(--fs-body); color: var(--ink); list-style: none; }
+.v2-tips > summary::-webkit-details-marker { display: none; }
+.v2-tips > summary::after { content: "＋"; margin-inline-start: auto; color: var(--slate); font-weight: 700; }
+.v2-tips[open] > summary::after { content: "－"; }
+.v2-tips[open] > summary { border-bottom: 1px solid var(--line); }
+.v2-tips ul { margin: 0; padding: 10px 14px 12px 32px; display: flex; flex-direction: column; gap: 6px; }
+.v2-tips li { font-size: var(--fs-body); line-height: var(--lh-body); color: var(--ink-2); }
