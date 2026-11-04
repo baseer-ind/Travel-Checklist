@@ -309,3 +309,13 @@ Implemented the approved desktop design (Claude Design "Design_6" handoff, `Bagg
 - **No new colours / no restyle**: the rail uses existing tokens — `--surface` (#F7F4EF) rail, `--line` (#E6E1D8) divider, `--canvas` (#EFEAE1) active/hover, `--together*` for the badge. Two new nav icons (gear/shield) were added to the icon set for Settings/Admin; no existing component's styling changed. The mobile bottom tab bar, brand and hamburger are hidden (not removed) via `@media (min-width:768px)` under `.has-rail`.
 
 `npm test`: 44 (unchanged). `npm run test:browser`: 26 (the "desktop shell" test now asserts the rail replaces the tab bar and the content widens at 1280/768 and reverts on mobile; a new test locks the signed-in rail's Home/Together/Settings/Admin + account menu; the guest-Welcome-centred test is unchanged and still green).
+
+## 2026-11-04 — Mode-specific travel tips (preparation reminders only)
+
+Each `TRANSPORT` entry (plane/train/road/bus/ship) gained a `tips` array of short **preparation reminders** (`public/app.js`). On the Trip screen, when `trip.transport` is set, a collapsed `<details class="v2-tips">` ("<emoji> Travel tips for <mode label>") lists that mode's tips — placed just after the Share&save/Directions tools row, in both the signed-in (`renderTripV2`) and guest (`renderGTrip`) trips via one shared helper `travelTipsSection(t)`. Collapsed by default.
+
+Hard rules kept:
+- **No visa / entry / health / customs facts.** The copy is strictly "reach the airport 2–3 hours before", "check your cabin-bag size", "carry a power bank", etc. — things to *do before you leave*, never a stated rule the app would be answering. `travelTipsSection` only renders the given strings; it adds nothing.
+- **No restyle:** `.v2-tips` is a new component class using existing tokens (`--bg`/`--line`/`--radius-card`/`--ink`/`--slate`/`--ink-2`); no existing component changed. The open/closed `＋`/`－` affordance is a static `::after` glyph swap, so there is **no animation to disable under reduced-motion**. The `<summary>` is a ≥44px touch target.
+
+`npm test`: 44 (unchanged). `npm run test:browser`: 27 (adds: a plane trip's Trip screen renders a collapsed "Travel tips for Plane" panel listing exactly the five plane tips, with a ≥44px summary).

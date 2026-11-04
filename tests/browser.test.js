@@ -798,6 +798,41 @@ async function a11y(page, label) {
     await ctx.close();
   });
 
+  // Mode-specific travel tips: a plane trip's Trip screen shows a collapsed "Travel tips for Plane"
+  // panel listing exactly the plane reminders (preparation reminders only — no visa/entry/health fact).
+  await test("Travel tips: a plane trip shows a collapsed 'Travel tips for Plane' panel with the expected lines", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const pg = await ctx.newPage();
+    await signup(pg, "Tipper", "secret1");
+    await pg.getByRole("button", { name: /^Plan a/ }).click();
+    await pg.locator("#main h1", { hasText: "Plan a trip" }).first().waitFor({ timeout: 8000 });
+    await pg.getByLabel("Trip name").fill("Rome tips");
+    await pg.getByRole("radio", { name: "Start blank" }).click();     // reveals the transport step
+    await pg.getByRole("radio", { name: "Plane" }).click();
+    await pg.getByRole("button", { name: "Create trip" }).click();
+    await pg.locator("#main h1", { hasText: "Rome tips" }).first().waitFor({ timeout: 8000 });
+
+    const tips = await pg.evaluate(() => {
+      const d = document.querySelector("details.v2-tips");
+      if (!d) return null;
+      return { open: d.hasAttribute("open"), summary: d.querySelector("summary").textContent, items: [...d.querySelectorAll("li")].map((li) => li.textContent) };
+    });
+    assert.ok(tips, "the trip screen renders a .v2-tips panel for a transport trip");
+    assert.equal(tips.summary, "✈️ Travel tips for Plane", "summary names the mode");
+    assert.equal(tips.open, false, "the tips panel is collapsed by default");
+    assert.deepEqual(tips.items, [
+      "Do your web check-in early — it usually opens ~48h before.",
+      "Reach the airport 2–3 hours before departure.",
+      "Check your airline's cabin-bag size and weight before you pack.",
+      "Charge your phone and carry a power bank.",
+      "Keep ID and boarding pass easy to reach.",
+    ], "lists exactly the plane tips");
+    // the summary is a >=44px touch target
+    const h = await pg.evaluate(() => Math.round(document.querySelector("details.v2-tips > summary").getBoundingClientRect().height));
+    assert.ok(h >= 44, "the summary is a >=44px target (" + h + ")");
+    await ctx.close();
+  });
+
   // The guided survey reuses buildTripFromForm, so for equivalent answers it builds the same trip as the
   // one-page form; and "Skip, start blank" yields a blank trip (one empty Packing list + Before you leave).
   await test("guided survey == one-page form for equivalent answers; Skip yields a blank trip", async () => {
