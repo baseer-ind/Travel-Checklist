@@ -29,7 +29,8 @@
   /* ================= state ================= */
   var S = null;               // the checklist data (saved to the server)
   var user = null;            // {username,key,role,mustChange}
-  var cfg = { signupEnabled: false };
+  var cfg = { signupEnabled: false, googleEnabled: false };
+  var GOOGLE_G_SVG = '<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
   var rev = 0, dirty = false, saving = false, saveTimer = null, retryMs = 0, saveState = "saved";
   var view = "app";           // app | account | admin | adminuser | mustchange
   var appView = "home";       // within view==="app" (signed-in v2): home | trip | new
@@ -406,6 +407,18 @@
     } else authMode = "login";
     if (expiredMsg) { var exm = el("p", "v2-alert bad", expiredMsg); exm.setAttribute("role", "alert"); card.appendChild(exm); }
     var err = el("p", "v2-alert bad"); err.id = "aErr"; err.setAttribute("role", "alert"); err.style.display = "none"; card.appendChild(err);
+    if (cfg.googleEnabled) {
+      var gbtn = el("button", "v2-btn full"); gbtn.type = "button"; gbtn.id = "aGoogle";
+      gbtn.style.cssText = "background:#fff;color:#1f1f1f;border:1px solid #dadce0;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600";
+      var gi = document.createElement("span"); gi.style.cssText = "display:inline-flex;width:18px;height:18px"; gi.innerHTML = GOOGLE_G_SVG;
+      gbtn.appendChild(gi); gbtn.appendChild(document.createTextNode(signup ? "Sign up with Google" : "Continue with Google"));
+      gbtn.addEventListener("click", function () { gbtn.disabled = true; gbtn.style.opacity = "0.6"; window.location.href = "/api/auth/google"; });
+      card.appendChild(gbtn);
+      var orl = el("div"); orl.style.cssText = "display:flex;align-items:center;gap:10px;color:var(--slate);font-size:14px;margin:2px 0";
+      var ln1 = el("span"); ln1.style.cssText = "flex:1;height:1px;background:var(--line,#e5e7eb)";
+      var ln2 = el("span"); ln2.style.cssText = "flex:1;height:1px;background:var(--line,#e5e7eb)";
+      orl.appendChild(ln1); orl.appendChild(el("span", null, "or")); orl.appendChild(ln2); card.appendChild(orl);
+    }
     var form = document.createElement("form"); form.noValidate = true; form.style.cssText = "display:flex;flex-direction:column;gap:12px"; card.appendChild(form);
     var name = v2Field("aName", "Your name", "text", "username"), pw = v2PwField("aPass", "Password", signup ? "new-password" : "current-password");
     form.appendChild(name.wrap); form.appendChild(pw.wrap);
@@ -1821,10 +1834,16 @@
 
   /* ================= boot ================= */
   api("GET", "/api/me").then(function (r) {
-    cfg.signupEnabled = !!r.signupEnabled; user = r.user;
-    var qc = null; try { var sp = new URLSearchParams(location.search); qc = sp.get("code"); pendingGroup = sp.get("group"); pendingFamily = sp.get("family"); } catch (e) { }
+    cfg.signupEnabled = !!r.signupEnabled; cfg.googleEnabled = !!r.googleEnabled; user = r.user;
+    var qc = null, authMsg = null;
+    try {
+      var sp = new URLSearchParams(location.search); qc = sp.get("code"); pendingGroup = sp.get("group"); pendingFamily = sp.get("family"); authMsg = sp.get("auth");
+      // Clear the ?auth=… marker the Google callback adds, so a refresh or share link stays clean.
+      if (authMsg) { sp.delete("auth"); var qs = sp.toString(); history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash); }
+    } catch (e) { }
     var first = user ? afterLogin() : enterGuest();   // no account → guest-first (works offline)
     return first.then(function () {
+      if (authMsg === "google_failed") toast("Google sign-in didn't finish. Please try again.");
       if (qc) return openShared(qc);
       // A scanned/followed "?family=CODE" link (from the QR or Share) jumps a signed-in user straight
       // to Together with the code pre-filled. Guests have no account yet, so they stay on Home.

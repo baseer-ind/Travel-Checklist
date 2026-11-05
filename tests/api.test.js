@@ -2,11 +2,30 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
 const { createServer } = require("../server");
 
 const DATA = path.join(__dirname, "..", ".data", "test-db.json");
 try { fs.unlinkSync(DATA); } catch (e) {}
-const env = { ADMIN_USERNAME: "admin", ADMIN_PASSWORD: "test-admin-pw", FAMILY_CODE: "family", DATA_FILE: DATA, SESSION_SECRET: "t" };
+const env = { ADMIN_USERNAME: "admin", ADMIN_PASSWORD: "test-admin-pw", FAMILY_CODE: "family", DATA_FILE: DATA, SESSION_SECRET: "t", GOOGLE_CLIENT_ID: "test-google-client", GOOGLE_CLIENT_SECRET: "test-google-secret" };
+
+// Stub for Google's token endpoint: maps the one-time `code` we sent to a crafted ID token. The payload
+// is whatever the test registered for that code (plus iss/aud/exp), so we exercise the real callback
+// without reaching Google. Signature is a placeholder — the server doesn't verify it (token came over TLS).
+const googleClaimsByCode = {};
+const tokenSrv = http.createServer((req, res) => {
+  let body = ""; req.on("data", (c) => { body += c; }); req.on("end", () => {
+    const code = new URLSearchParams(body).get("code") || "";
+    const claims = googleClaimsByCode[code];
+    if (!claims) { res.statusCode = 400; res.setHeader("Content-Type", "application/json"); return res.end(JSON.stringify({ error: "invalid_grant" })); }
+    const now = Math.floor(Date.now() / 1000);
+    const payload = Object.assign({ iss: "https://accounts.google.com", aud: env.GOOGLE_CLIENT_ID, iat: now, exp: now + 3600 }, claims);
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const idToken = b64({ alg: "RS256", typ: "JWT" }) + "." + b64(payload) + "." + "testsig";
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ id_token: idToken, access_token: "x", token_type: "Bearer", expires_in: 3600 }));
+  });
+});
 
 let base, server, passed = 0, failed = 0;
 async function test(name, fn) {
@@ -24,7 +43,28 @@ function client() {
 }
 const sampleTrip = (name) => ({ next: 10, curTrip: 1, curList: 2, trips: [{ id: 1, name: name || "Trip to Tokyo", created: 1, packedAt: null, travelDate: "2026-12-25", lists: [{ id: 2, name: "Clothing", emoji: "🧥", items: [{ id: 3, emoji: "🧥", name: "Jacket", state: "todo" }, { id: 4, emoji: "🧣", name: "Secret scarf", state: "todo", hidden: true }] }] }] });
 
+// Helper cookie-jar fetch that does NOT follow redirects, for the Google OAuth flow (302s to Google and
+// back). Returns status, Location, and all Set-Cookie headers.
+function setCookies(r) { return r.headers.getSetCookie ? r.headers.getSetCookie() : [r.headers.get("set-cookie")].filter(Boolean); }
+function pickCookie(list, name) { const c = (list || []).find((x) => x && x.indexOf(name + "=") === 0); return c ? c.split(";")[0] : ""; }
+async function googleFlow(claims, opts) {
+  opts = opts || {};
+  const code = "code-" + Math.random().toString(36).slice(2);
+  googleClaimsByCode[code] = claims;
+  const start = await fetch(base + "/api/auth/google", { redirect: "manual", headers: { Origin: base } });
+  const loc = start.headers.get("location") || "";
+  const state = (() => { try { return new URL(loc).searchParams.get("state"); } catch (e) { return null; } })();
+  const oauthCookie = pickCookie(setCookies(start), "tc_oauth");
+  const useState = "state" in opts ? opts.state : state;
+  const useCookie = "cookie" in opts ? opts.cookie : oauthCookie;
+  const cb = await fetch(base + "/api/auth/google/callback?code=" + encodeURIComponent(code) + "&state=" + encodeURIComponent(useState || ""), { redirect: "manual", headers: { Cookie: useCookie } });
+  return { startStatus: start.status, startLoc: loc, state, oauthCookie, cbStatus: cb.status, cbLoc: cb.headers.get("location") || "", session: pickCookie(setCookies(cb), "tc_session") };
+}
+async function meWith(sessionCookie) { const r = await fetch(base + "/api/me", { headers: { Cookie: sessionCookie } }); let j = null; try { j = await r.json(); } catch (e) {} return { status: r.status, body: j }; }
+
 (async () => {
+  await new Promise((r) => tokenSrv.listen(0, r));
+  env.GOOGLE_TOKEN_URL = "http://127.0.0.1:" + tokenSrv.address().port + "/token";
   server = createServer(env); await new Promise((r) => server.listen(0, r)); base = "http://127.0.0.1:" + server.address().port;
   console.log("API tests on " + base);
 
@@ -47,6 +87,48 @@ const sampleTrip = (name) => ({ next: 10, curTrip: 1, curList: 2, trips: [{ id: 
   await test("login wrong password", async () => { assert.equal((await client()("POST", "/api/login", { username: "Amina", password: "nope00" })).status, 401); });
   await test("login right password", async () => { const r = await bilal("POST", "/api/signup", { username: "Bilal", password: "secret2", code: "family" }); assert.equal(r.status, 201); const l = await client()("POST", "/api/login", { username: "bilal", password: "secret2" }); assert.equal(l.status, 200); });
   await test("admin login from env password", async () => { const r = await admin("POST", "/api/login", { username: "admin", password: "test-admin-pw" }); assert.equal(r.status, 200); assert.equal(r.body.user.role, "admin"); });
+
+  await test("config reports google enabled", async () => { const r = await client()("GET", "/api/config"); assert.equal(r.status, 200); assert.equal(r.body.googleEnabled, true); });
+  await test("google start redirects to Google with a signed state cookie", async () => {
+    const f = await googleFlow({ sub: "probe", email: "probe@example.com", email_verified: true, name: "Probe" });
+    assert.equal(f.startStatus, 302);
+    assert.ok(f.startLoc.indexOf("accounts.google.com") > -1, "redirects to Google");
+    const u = new URL(f.startLoc);
+    assert.equal(u.searchParams.get("client_id"), "test-google-client");
+    assert.ok(/\/api\/auth\/google\/callback$/.test(u.searchParams.get("redirect_uri") || ""), "registers our callback uri");
+    assert.ok(f.state && f.state.length >= 16, "carries a state");
+    assert.ok(f.oauthCookie.indexOf("tc_oauth=") === 0, "sets the oauth state cookie");
+  });
+  await test("google callback creates a password-less account and signs in", async () => {
+    const f = await googleFlow({ sub: "g-baseer", email: "baseer@example.com", email_verified: true, name: "Baseer" });
+    assert.equal(f.cbStatus, 302);
+    assert.equal(f.cbLoc, "/?auth=google_ok");
+    assert.ok(f.session.indexOf("tc_session=") === 0, "issues a session cookie");
+    const me = await meWith(f.session);
+    assert.equal(me.body.user.username, "Baseer");
+    assert.ok(!JSON.stringify(me.body).includes("baseer@example.com"), "email is never exposed in /api/me");
+    // a Google account has no password, so a password login against its name fails
+    assert.equal((await client()("POST", "/api/login", { username: "Baseer", password: "whatever" })).status, 401);
+  });
+  await test("returning google user maps to the same account", async () => {
+    const a = await googleFlow({ sub: "g-repeat", email: "rep@example.com", email_verified: true, name: "Rep Visitor" });
+    const first = (await meWith(a.session)).body.user;
+    const b = await googleFlow({ sub: "g-repeat", email: "rep@example.com", email_verified: true, name: "Rep Visitor" });
+    const second = (await meWith(b.session)).body.user;
+    assert.equal(second.key, first.key); assert.equal(second.username, first.username);
+  });
+  await test("google callback with a mismatched state is refused", async () => {
+    const f = await googleFlow({ sub: "g-x", email: "x@example.com", email_verified: true, name: "X" }, { state: "not-the-real-state" });
+    assert.equal(f.cbLoc, "/?auth=google_failed"); assert.equal(f.session, "");
+  });
+  await test("google callback without the oauth cookie is refused", async () => {
+    const f = await googleFlow({ sub: "g-y", email: "y@example.com", email_verified: true, name: "Y" }, { cookie: "" });
+    assert.equal(f.cbLoc, "/?auth=google_failed"); assert.equal(f.session, "");
+  });
+  await test("google callback with an unverified email is refused", async () => {
+    const f = await googleFlow({ sub: "g-z", email: "z@example.com", email_verified: false, name: "Z" });
+    assert.equal(f.cbLoc, "/?auth=google_failed"); assert.equal(f.session, "");
+  });
   await test("forged / tampered cookie is rejected", async () => { const r = await (async () => { const c = client(); return c("GET", "/api/data", undefined, { Cookie: "tc_session=eyJ1IjoiYWRtaW4iLCJwdiI6MSwiZXhwIjo5OTk5OTk5OTk5OTk5fQ.bad" }); })(); assert.equal(r.status, 401); });
   await test("unauthenticated data is 401", async () => { assert.equal((await stranger("GET", "/api/data")).status, 401); });
   await test("cross-origin POST blocked", async () => { assert.equal((await amina("POST", "/api/logout", {}, { Origin: "https://evil.example" })).status, 403); });
@@ -197,6 +279,7 @@ const sampleTrip = (name) => ({ next: 10, curTrip: 1, curList: 2, trips: [{ id: 
   await test("data survives a server restart", async () => { await new Promise((r) => server.close(r)); await new Promise((r) => setTimeout(r, 150)); server = createServer(env); await new Promise((r) => server.listen(0, r)); base = "http://127.0.0.1:" + server.address().port; const c = client(); assert.equal((await c("POST", "/api/login", { username: "Amina", password: "secret9" })).status, 200); const d = await c("GET", "/api/data"); assert.equal(d.body.data.trips[0].name, "Trip to Tokyo"); });
 
   server.close();
+  tokenSrv.close();
   console.log("\n" + passed + " passed, " + failed + " failed");
   try { fs.unlinkSync(DATA); } catch (e) {}
   process.exit(failed ? 1 : 0);
