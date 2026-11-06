@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.arusa.baggo.twa",
+      "sha256_cert_fingerprints": [
+        "F9:17:70:AB:C3:8B:0A:8A:FB:F0:B3:51:11:CF:D1:65:9C:37:79:09:82:41:EA:6B:B2:FF:80:2C:E0:26:65:1D"
+      ]
+    }
+  }
+]
