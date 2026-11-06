@@ -5,7 +5,8 @@
       "namespace": "android_app",
       "package_name": "app.arusa.baggo.twa",
       "sha256_cert_fingerprints": [
-        "F9:17:70:AB:C3:8B:0A:8A:FB:F0:B3:51:11:CF:D1:65:9C:37:79:09:82:41:EA:6B:B2:FF:80:2C:E0:26:65:1D"
+        "F9:17:70:AB:C3:8B:0A:8A:FB:F0:B3:51:11:CF:D1:65:9C:37:79:09:82:41:EA:6B:B2:FF:80:2C:E0:26:65:1D",
+        "73:2A:70:5C:1F:32:5F:1A:45:89:40:8B:F7:B2:CD:88:2F:02:C2:1D:37:5D:EF:31:EE:C9:5A:31:DA:DB:E1:BE"
       ]
     }
   }
