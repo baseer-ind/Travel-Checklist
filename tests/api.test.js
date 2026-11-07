@@ -7,7 +7,22 @@ const { createServer } = require("../server");
 
 const DATA = path.join(__dirname, "..", ".data", "test-db.json");
 try { fs.unlinkSync(DATA); } catch (e) {}
-const env = { ADMIN_USERNAME: "admin", ADMIN_PASSWORD: "test-admin-pw", FAMILY_CODE: "family", DATA_FILE: DATA, SESSION_SECRET: "t", GOOGLE_CLIENT_ID: "test-google-client", GOOGLE_CLIENT_SECRET: "test-google-secret" };
+const env = { ADMIN_USERNAME: "admin", ADMIN_PASSWORD: "test-admin-pw", FAMILY_CODE: "family", DATA_FILE: DATA, SESSION_SECRET: "t", GOOGLE_CLIENT_ID: "test-google-client", GOOGLE_CLIENT_SECRET: "test-google-secret", RESEND_API_KEY: "test-resend-key" };
+
+// Stub for Resend's email API: captures every email the server sends so tests can read the reset link/token.
+const sentEmails = [];
+const resendSrv = http.createServer((req, res) => {
+  let body = ""; req.on("data", (c) => { body += c; }); req.on("end", () => {
+    try { sentEmails.push(JSON.parse(body)); } catch (e) {}
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ id: "email_" + sentEmails.length }));
+  });
+});
+function lastResetToken() {
+  const e = sentEmails[sentEmails.length - 1]; if (!e) return null;
+  const m = String(e.text || e.html || "").match(/reset\?token=([^"&\s<]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
 
 // Stub for Google's token endpoint: maps the one-time `code` we sent to a crafted ID token. The payload
 // is whatever the test registered for that code (plus iss/aud/exp), so we exercise the real callback
@@ -65,6 +80,8 @@ async function meWith(sessionCookie) { const r = await fetch(base + "/api/me", {
 (async () => {
   await new Promise((r) => tokenSrv.listen(0, r));
   env.GOOGLE_TOKEN_URL = "http://127.0.0.1:" + tokenSrv.address().port + "/token";
+  await new Promise((r) => resendSrv.listen(0, r));
+  env.RESEND_URL = "http://127.0.0.1:" + resendSrv.address().port + "/emails";
   server = createServer(env); await new Promise((r) => server.listen(0, r)); base = "http://127.0.0.1:" + server.address().port;
   console.log("API tests on " + base);
 
@@ -128,6 +145,68 @@ async function meWith(sessionCookie) { const r = await fetch(base + "/api/me", {
   await test("google callback with an unverified email is refused", async () => {
     const f = await googleFlow({ sub: "g-z", email: "z@example.com", email_verified: false, name: "Z" });
     assert.equal(f.cbLoc, "/?auth=google_failed"); assert.equal(f.session, "");
+  });
+
+  await test("config reports email enabled", async () => { const r = await client()("GET", "/api/config"); assert.equal(r.body.emailEnabled, true); });
+  await test("signup takes an optional recovery email and reset works end to end", async () => {
+    const c = client();
+    const su = await c("POST", "/api/signup", { username: "Resetter", password: "firstpass", email: "reset.me@example.com" });
+    assert.equal(su.status, 201); assert.equal(su.body.user.hasEmail, true);
+    const before = sentEmails.length;
+    const fr = await client()("POST", "/api/password/forgot", { account: "Resetter" });
+    assert.equal(fr.status, 200); assert.equal(fr.body.ok, true);
+    assert.equal(sentEmails.length, before + 1, "a reset email was sent");
+    assert.deepEqual(sentEmails[sentEmails.length - 1].to, ["reset.me@example.com"]);
+    const token = lastResetToken(); assert.ok(token, "reset email carries a token");
+    const rs = await client()("POST", "/api/password/reset", { token, password: "secondpass" });
+    assert.equal(rs.status, 200); assert.equal(rs.body.user.username, "Resetter");
+    assert.equal((await client()("POST", "/api/login", { username: "Resetter", password: "secondpass" })).status, 200);
+    assert.equal((await client()("POST", "/api/login", { username: "Resetter", password: "firstpass" })).status, 401);
+    assert.equal((await client()("POST", "/api/password/reset", { token, password: "thirdpass" })).status, 400, "token is single-use");
+  });
+  await test("forgot by recovery email address also works", async () => {
+    await client()("POST", "/api/signup", { username: "Emailee", password: "pw123456", email: "emailee@example.com" });
+    const before = sentEmails.length;
+    const fr = await client()("POST", "/api/password/forgot", { account: "emailee@example.com" });
+    assert.equal(fr.status, 200); assert.equal(sentEmails.length, before + 1);
+    assert.deepEqual(sentEmails[sentEmails.length - 1].to, ["emailee@example.com"]);
+  });
+  await test("forgot for an unknown account sends nothing but returns ok", async () => {
+    const before = sentEmails.length;
+    const r = await client()("POST", "/api/password/forgot", { account: "ghost-user" });
+    assert.equal(r.status, 200); assert.equal(r.body.ok, true);
+    assert.equal(sentEmails.length, before, "no email for a non-existent account");
+  });
+  await test("forgot for an account with no recovery email sends nothing", async () => {
+    await client()("POST", "/api/signup", { username: "NoEmail", password: "pw123456" });
+    const before = sentEmails.length;
+    await client()("POST", "/api/password/forgot", { account: "NoEmail" });
+    assert.equal(sentEmails.length, before);
+  });
+  await test("email is never exposed — only a hasEmail flag", async () => {
+    const c = client();
+    await c("POST", "/api/signup", { username: "Hidden", password: "pw123456", email: "hidden@example.com" });
+    const me = await c("GET", "/api/me");
+    assert.equal(me.body.user.hasEmail, true);
+    assert.ok(!JSON.stringify(me.body).includes("hidden@example.com"), "the address itself is not returned");
+  });
+  await test("reset with an invalid token is refused", async () => {
+    assert.equal((await client()("POST", "/api/password/reset", { token: "not-a-real-token", password: "whatever1" })).status, 400);
+  });
+  await test("account email endpoint sets and clears the recovery email", async () => {
+    const c = client();
+    await c("POST", "/api/signup", { username: "Setter", password: "pw123456" });
+    assert.equal((await c("GET", "/api/me")).body.user.hasEmail, false);
+    assert.equal((await c("POST", "/api/account/email", { email: "setter@example.com" })).body.user.hasEmail, true);
+    const before = sentEmails.length;
+    await client()("POST", "/api/password/forgot", { account: "Setter" });
+    assert.equal(sentEmails.length, before + 1, "reset works once an email is added");
+    assert.equal((await c("POST", "/api/account/email", { email: "" })).body.user.hasEmail, false);
+  });
+  await test("recovery email must be a valid address", async () => {
+    const c = client();
+    await c("POST", "/api/signup", { username: "Valid8", password: "pw123456" });
+    assert.equal((await c("POST", "/api/account/email", { email: "not-an-email" })).status, 400);
   });
   await test("forged / tampered cookie is rejected", async () => { const r = await (async () => { const c = client(); return c("GET", "/api/data", undefined, { Cookie: "tc_session=eyJ1IjoiYWRtaW4iLCJwdiI6MSwiZXhwIjo5OTk5OTk5OTk5OTk5fQ.bad" }); })(); assert.equal(r.status, 401); });
   await test("unauthenticated data is 401", async () => { assert.equal((await stranger("GET", "/api/data")).status, 401); });
@@ -280,6 +359,7 @@ async function meWith(sessionCookie) { const r = await fetch(base + "/api/me", {
 
   server.close();
   tokenSrv.close();
+  resendSrv.close();
   console.log("\n" + passed + " passed, " + failed + " failed");
   try { fs.unlinkSync(DATA); } catch (e) {}
   process.exit(failed ? 1 : 0);
