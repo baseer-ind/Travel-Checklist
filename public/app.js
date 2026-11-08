@@ -430,7 +430,7 @@
       var tl = el("a", null, "Terms"); tl.href = "/terms"; tl.target = "_blank"; tl.rel = "noopener"; agree.appendChild(tl);
       agree.appendChild(document.createTextNode(" and "));
       var pl = el("a", null, "Privacy Policy"); pl.href = "/privacy"; pl.target = "_blank"; pl.rel = "noopener"; agree.appendChild(pl);
-      agree.appendChild(document.createTextNode(". Baggo is for ages 16 and over."));
+      agree.appendChild(document.createTextNode(". Baggo is for ages 18 and over."));
       form.appendChild(agree);
     }
     form.addEventListener("submit", function (ev) {
