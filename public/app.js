@@ -29,7 +29,7 @@
   /* ================= state ================= */
   var S = null;               // the checklist data (saved to the server)
   var user = null;            // {username,key,role,mustChange}
-  var cfg = { signupEnabled: false, googleEnabled: false };
+  var cfg = { signupEnabled: false, googleEnabled: false, emailEnabled: false };
   var GOOGLE_G_SVG = '<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
   var rev = 0, dirty = false, saving = false, saveTimer = null, retryMs = 0, saveState = "saved";
   var view = "app";           // app | account | admin | adminuser | mustchange
@@ -422,6 +422,7 @@
     var form = document.createElement("form"); form.noValidate = true; form.style.cssText = "display:flex;flex-direction:column;gap:12px"; card.appendChild(form);
     var name = v2Field("aName", "Your name", "text", "username"), pw = v2PwField("aPass", "Password", signup ? "new-password" : "current-password");
     form.appendChild(name.wrap); form.appendChild(pw.wrap);
+    var em = null; if (signup) { em = v2Field("aEmail", "Email — optional, so you can reset your password", "email", "email"); form.appendChild(em.wrap); }
     var code = null; if (signup) { code = v2Field("aCode", "Family code — optional (you can also join a family later)", "text", "off"); form.appendChild(code.wrap); }
     var go = el("button", "v2-btn full", signup ? "Create my account" : "Log in"); go.type = "submit"; go.id = "aSubmit"; form.appendChild(go);
     if (signup) {
@@ -438,17 +439,68 @@
       if (!nm || !pass) { err.textContent = "Please enter your name and password."; err.style.display = "block"; return; }
       go.disabled = true; go.textContent = "Please wait…";
       var body = { username: nm, password: pass }; if (code) body.code = code.input.value.trim();
+      if (signup && em && em.input.value.trim()) body.email = em.input.value.trim();
       api("POST", signup ? "/api/signup" : "/api/login", body).then(function (r) { user = r.user; return afterLogin(); }).catch(function (e) {
         err.textContent = errText(e); err.style.display = "block"; go.disabled = false; go.textContent = signup ? "Create my account" : "Log in";
       });
     });
-    card.appendChild(el("p", "v2-fine", signup ? "Create a free account to save your trips and sync across devices. Join a family or group anytime to pack together." : "Forgot your password? Ask the admin to reset it for you."));
+    if (signup) {
+      card.appendChild(el("p", "v2-fine", "Create a free account to save your trips and sync across devices. Join a family or group anytime to pack together."));
+    } else {
+      var fp = el("p", "v2-fine");
+      if (cfg.emailEnabled) {
+        fp.appendChild(document.createTextNode("Forgot your password? "));
+        var fl = el("a", null, "Reset it by email"); fl.href = "#";
+        fl.addEventListener("click", function (e) { e.preventDefault(); forgotPassword(); });
+        fp.appendChild(fl); fp.appendChild(document.createTextNode("."));
+        if (cfg.googleEnabled) fp.appendChild(document.createTextNode(" Signed up with Google? Use Continue with Google above."));
+      } else if (cfg.googleEnabled) {
+        fp.appendChild(document.createTextNode("Forgot your password? If you signed up with Google, use Continue with Google above."));
+      } else {
+        fp.appendChild(document.createTextNode("Forgot your password? You can create a new account to continue."));
+      }
+      card.appendChild(fp);
+    }
     var links = el("div", "v2-linkrow");
     links.appendChild(btn("v2-link", "Have a sharing code? View a list", askSharedCode));
     links.appendChild(btn("v2-link", "Continue without an account", function () { enterGuest(); }));
     narrow.appendChild(links);
     v2Footer(narrow);
     setTimeout(function () { var f = document.activeElement; if (!f || f === document.body) name.input.focus(); }, 30);
+  }
+  function forgotPassword() {
+    openModal({ title: "Reset your password", text: "Enter your username or your recovery email. If it matches an account that has a recovery email, we'll send a reset link.", placeholder: "username or email", ok: "Send reset link" }, function (v) {
+      var who = (v || "").trim(); if (!who) return;
+      var done = function () { toast("If an account with a recovery email exists, a reset link is on its way — check your inbox (and spam)."); };
+      api("POST", "/api/password/forgot", { account: who }).then(done).catch(done);
+    });
+  }
+  // Shown when the person opens the emailed /reset?token=… link. Sets a new password, then signs them in.
+  function renderReset(token) {
+    var wrap = gShell(false); v2Brandbar(wrap);
+    var narrow = el("div", "v2-narrow"); wrap.appendChild(narrow);
+    var head = el("div", "v2-authhead"); head.appendChild(brandLockup());
+    head.appendChild(el("h1", "v2-h1", "Set a new password"));
+    head.appendChild(el("p", "v2-sub", "Choose a new password for your Baggo account."));
+    narrow.appendChild(head);
+    var card = el("div", "v2-card"); card.style.cssText = "display:flex;flex-direction:column;gap:14px"; narrow.appendChild(card);
+    var err = el("p", "v2-alert bad"); err.setAttribute("role", "alert"); err.style.display = "none"; card.appendChild(err);
+    var form = document.createElement("form"); form.noValidate = true; form.style.cssText = "display:flex;flex-direction:column;gap:12px"; card.appendChild(form);
+    var pw = v2PwField("rPass", "New password", "new-password"); form.appendChild(pw.wrap);
+    var go = el("button", "v2-btn full", "Set new password"); go.type = "submit"; form.appendChild(go);
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault(); err.style.display = "none";
+      var p = pw.input.value; if (!p || p.length < 6) { err.textContent = "Password must be at least 6 characters."; err.style.display = "block"; return; }
+      go.disabled = true; go.textContent = "Please wait…";
+      api("POST", "/api/password/reset", { token: token, password: p }).then(function (r) {
+        user = r.user; try { history.replaceState(null, "", "/"); } catch (e) {} return afterLogin();
+      }).catch(function (e) {
+        err.textContent = errText(e); err.style.display = "block"; go.disabled = false; go.textContent = "Set new password";
+      });
+    });
+    var back = el("div", "v2-linkrow"); back.appendChild(btn("v2-link", "Back to sign in", function () { try { history.replaceState(null, "", "/"); } catch (e) {} authMode = "login"; enterGuest(); }));
+    narrow.appendChild(back);
+    v2Footer(narrow);
   }
   function renderMustChange() {
     var wrap = gShell(false); v2Brandbar(wrap);
@@ -544,6 +596,25 @@
     wrap.appendChild(el("p", "v2-sub", "Signed in as " + user.username + (user.role === "admin" ? " · admin" : "")));
     var pwCard = el("div", "v2-card"); pwCard.style.cssText = "display:flex;flex-direction:column;gap:12px";
     pwCard.appendChild(el("h2", "v2-h2", "Change password")); pwCard.appendChild(passwordForm(false)); wrap.appendChild(pwCard);
+    if (cfg.emailEnabled) {
+      var reCard = el("div", "v2-card"); reCard.style.cssText = "display:flex;flex-direction:column;gap:10px";
+      reCard.appendChild(el("h2", "v2-h2", "Recovery email"));
+      reCard.appendChild(el("p", "v2-sub", user.hasEmail
+        ? "A recovery email is set — if you forget your password, we'll email you a reset link. Enter a new address to change it, or remove it below. It's never shown to anyone."
+        : "Add an email so you can reset your password if you forget it. It's used only for reset — never shown to family, groups or admins."));
+      var ref = v2Field("acEmail", "Email address", "email", "email");
+      reCard.appendChild(ref.wrap);
+      var reErr = el("p", "v2-alert bad"); reErr.setAttribute("role", "alert"); reErr.style.display = "none"; reCard.appendChild(reErr);
+      reCard.appendChild(btn("v2-btn full", "Save recovery email", function () {
+        var v = ref.input.value.trim(); reErr.style.display = "none";
+        if (!v) { reErr.textContent = "Enter an email address, or use Remove below."; reErr.style.display = "block"; return; }
+        api("POST", "/api/account/email", { email: v }).then(function (r) { user = r.user; toast("Recovery email saved."); render(); }).catch(function (e) { reErr.textContent = errText(e); reErr.style.display = "block"; });
+      }));
+      if (user.hasEmail) reCard.appendChild(btn("v2-btn sec full", "Remove recovery email", function () {
+        api("POST", "/api/account/email", { email: "" }).then(function (r) { user = r.user; toast("Recovery email removed."); render(); }).catch(function () {});
+      }));
+      wrap.appendChild(reCard);
+    }
     var dataCard = el("div", "v2-card"); dataCard.style.cssText = "display:flex;flex-direction:column;gap:12px";
     dataCard.appendChild(el("h2", "v2-h2", "Your data"));
     dataCard.appendChild(el("p", "v2-sub", "Download everything you've created, or permanently delete your account and all of its data."));
@@ -1834,7 +1905,14 @@
 
   /* ================= boot ================= */
   api("GET", "/api/me").then(function (r) {
-    cfg.signupEnabled = !!r.signupEnabled; cfg.googleEnabled = !!r.googleEnabled; user = r.user;
+    cfg.signupEnabled = !!r.signupEnabled; cfg.googleEnabled = !!r.googleEnabled; cfg.emailEnabled = !!r.emailEnabled; user = r.user;
+    // Password-reset link (/reset?token=…): show the reset form and skip the normal guest/login flow.
+    try {
+      if (location.pathname === "/reset") {
+        var rtok = new URLSearchParams(location.search).get("token");
+        if (rtok) { renderReset(rtok); return; }
+      }
+    } catch (e) { }
     var qc = null, authMsg = null;
     try {
       var sp = new URLSearchParams(location.search); qc = sp.get("code"); pendingGroup = sp.get("group"); pendingFamily = sp.get("family"); authMsg = sp.get("auth");
